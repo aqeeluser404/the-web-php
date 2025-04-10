@@ -1,0 +1,32 @@
+<?php
+require_once __DIR__ . '/../../vendor/autoload.php';
+require_once __DIR__ . '/../src/controllers/unitController.php';
+
+use Slim\App;
+use App\Middleware\AuthenticationMiddleware;
+use App\Middleware\AdminAuthorizationMiddleware;
+
+return function (App $app) {
+
+    // User routes ----------------------------------------------------------------------------------------------------
+
+    $app->get('/api/units', [UnitController::class, 'findAllUnitsController']) // GET FIND->ALL->UNITS
+    ->add(new AuthenticationMiddleware());
+
+    $app->get('/api/units/{id}', [UnitController::class, 'findUnitByIdController']) // GET FIND->UNIT->ID
+    ->add(new AuthenticationMiddleware());
+
+    // Admin routes ----------------------------------------------------------------------------------------------------
+
+    $app->post('/api/admin/units', [UnitController::class, 'createUnitController']) // POST CREATE->UNIT
+    ->add(new AdminAuthorizationMiddleware())
+    ->add(new AuthenticationMiddleware());
+
+    $app->put('/api/admin/units/{id}', [UnitController::class, 'updateUnitController']) // PUT UPDATE->UNIT
+    ->add(new AdminAuthorizationMiddleware())
+    ->add(new AuthenticationMiddleware());
+
+    $app->delete('/api/admin/units/{id}', [UnitController::class, 'deleteUnitController']) // DELETE DELETE->UNIT
+    ->add(new AdminAuthorizationMiddleware())
+    ->add(new AuthenticationMiddleware());
+};
