@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../../database/db.php';
 require_once __DIR__ . '/../../../vendor/autoload.php';
-require_once __DIR__ . '/../utils/imageKit.php';
+// require_once __DIR__ . '/../utils/imageKit.php';
 require_once __DIR__ . '/../utils/sendEmail.php';
 require_once __DIR__ . '/../utils/LocalFileHelper.php';
 
@@ -16,14 +16,14 @@ $dotenv->load();
 
 class UserService {
     private $userCollection;
-    private $ImageKitService;
+    // private $ImageKitService;
     private $emailService;
     private $localFileHelper;
 
     public function __construct() {
         $db = Database::getDb();
         $this->userCollection = $db->User;
-        $this->ImageKitService = new ImageKitService();
+        // $this->ImageKitService = new ImageKitService();
         $this->emailService = new EmailService();
         $this->localFileHelper = new LocalFileHelper(); 
     }
