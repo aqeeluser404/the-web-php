@@ -3,6 +3,7 @@ require_once __DIR__ . '/../../database/db.php';
 require_once __DIR__ . '/../../../vendor/autoload.php';
 require_once __DIR__ . '/../utils/imageKit.php';
 require_once __DIR__ . '/../utils/sendEmail.php';
+require_once __DIR__ . '/../utils/LocalFileHelper.php';
 
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
@@ -17,14 +18,14 @@ class UserService {
     private $userCollection;
     private $ImageKitService;
     private $emailService;
-    // private $localFileHelper;
+    private $localFileHelper;
 
     public function __construct() {
         $db = Database::getDb();
         $this->userCollection = $db->User;
         $this->ImageKitService = new ImageKitService();
         $this->emailService = new EmailService();
-        // $this->localFileHelper = new LocalFileHelper(); 
+        $this->localFileHelper = new LocalFileHelper(); 
     }
 
     protected function safeDateFormat($dateValue) {
@@ -339,7 +340,8 @@ class UserService {
             if (!empty($userDocs)) {
                 $uploadedDocuments = [];
                 foreach ($userDocs as $file) {
-                    $uploadedDocuments[] = $this->ImageKitService->uploadDocument($file);
+                    // $uploadedDocuments[] = $this->ImageKitService->uploadDocument($file);
+                    $uploadedDocuments[] = $this->localFileHelper->uploadDocument($file);
                 }
 
                 $updateResult = $this->userCollection->updateOne(
@@ -374,7 +376,8 @@ class UserService {
             }
 
             foreach ($user['documents'] as $doc) {
-                $this->ImageKitService->deleteDocument($doc['fileId']);
+                // $this->ImageKitService->deleteDocument($doc['fileId']);
+                $this->localFileHelper->deleteDocument($doc['fileId']);
             }
 
             $updateResult = $this->userCollection->updateOne(
@@ -407,7 +410,8 @@ class UserService {
                 throw new Exception('Document not found');
             }
 
-            $this->ImageKitService->deleteDocument($fileId);
+            // $this->ImageKitService->deleteDocument($fileId);
+            $this->localFileHelper->deleteDocument($fileId);
 
             $updateResult = $this->userCollection->updateOne(
                 ['_id' => new MongoDB\BSON\ObjectId($userId)],

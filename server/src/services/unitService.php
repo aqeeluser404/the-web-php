@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../../database/db.php';
 require_once __DIR__ . '/../../../vendor/autoload.php';
 require_once __DIR__ . '/../utils/imageKit.php';
+require_once __DIR__ . '/../utils/LocalFileHelper.php';
 
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
@@ -14,12 +15,14 @@ class UnitService {
     private $unitCollection;
     private $rentalCollection;
     private $ImageKitService;
+    private $localFileHelper;
 
     public function __construct() {
         $db = Database::getDb();
         $this->unitCollection = $db->Unit;
         $this->rentalCollection = $db->Rental;
         $this->ImageKitService = new ImageKitService();
+        $this->localFileHelper = new LocalFileHelper(); 
     }
 
     protected function safeDateFormat($dateValue) {
@@ -78,7 +81,8 @@ class UnitService {
                     throw new Exception('Invalid image upload');
                 }
                 
-                $uploaded = $this->ImageKitService->uploadImage($file);
+                // $uploaded = $this->ImageKitService->uploadImage($file);
+                $uploaded = $this->localFileHelper->uploadImage($file);
                 return [
                     'imageUrl' => (string) $uploaded['imageUrl'],
                     'fileId' => (string) $uploaded['fileId'],
@@ -228,7 +232,8 @@ class UnitService {
     
             foreach ($unit['images'] ?? [] as $image) {
                 try {
-                    $this->ImageKitService->deleteImage($image['fileId']);
+                    // $this->ImageKitService->deleteImage($image['fileId']);
+                    $this->localFileHelper->deleteImage($image['fileId']);
                 } catch (Exception $e) {
                     error_log("Failed to delete image {$image['fileId']}: " . $e->getMessage());
                 }
