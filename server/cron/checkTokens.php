@@ -74,7 +74,7 @@ class TokenChecker {
                 } catch (Exception $e) {
                     logMessage("Token for user {$user['_id']} is invalid or expired: " . $e->getMessage());
                     if ($e instanceof \Firebase\JWT\ExpiredException) {
-                        $this->userModel->update(
+                        $this->userModel->updateOne(
                             ['_id' => $user['_id']],
                             ['$set' => ['loginInfo.isLoggedIn' => false, 'loginInfo.loginToken' => null]]
                         );
