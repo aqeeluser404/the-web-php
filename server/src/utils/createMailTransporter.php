@@ -34,16 +34,28 @@ class MailTransport {
             throw $e;
         }
     }
+
     public static function createMailTransporterWrapper() {
-        $config = $_ENV['USE_GMAIL'] === 'true'
-            ? [
+        $emailService = $_ENV['EMAIL_SERVICE'] ?? 'custom'; // Default to custom if not specified
+        
+        $configs = [
+            'gmail' => [
                 'service' => 'smtp.gmail.com',
                 'auth' => [
                     'user' => $_ENV['HOST_EMAIL_ADDRESS'],
                     'pass' => $_ENV['HOST_EMAIL_PASSWORD']
                 ]
-            ]
-            : [
+            ],
+            'outlook' => [
+                'service' => 'smtp.office365.com',
+                'auth' => [
+                    'user' => $_ENV['BUSINESS_EMAIL_ADDRESS'], // Using business email for Outlook
+                    'pass' => $_ENV['HOST_EMAIL_PASSWORD']
+                ],
+                'port' => 587,
+                'secure' => false // Outlook requires STARTTLS
+            ],
+            'custom' => [
                 'host' => 'mail.the-web.co.za',
                 'port' => 465,
                 'secure' => true,
@@ -51,8 +63,13 @@ class MailTransport {
                     'user' => $_ENV['HOST_EMAIL_ADDRESS'],
                     'pass' => $_ENV['HOST_EMAIL_PASSWORD']
                 ]
-            ];
+            ]
+        ];
 
-        return self::createMailTransporter($config);
+        if (!array_key_exists($emailService, $configs)) {
+            throw new Exception("Unsupported email service: {$emailService}");
+        }
+
+        return self::createMailTransporter($configs[$emailService]);
     }
 }

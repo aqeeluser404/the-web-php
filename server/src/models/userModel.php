@@ -55,7 +55,8 @@ class User {
         $this->studentInfo = array_merge([
             'isRegisteredStudent' => false,
             'studentNumber' => null,
-            'registeredInstitution' => null
+            'registeredInstitution' => null,
+            'hasBursary' => false
         ], $studentInfo);
 
         // Verification
@@ -92,32 +93,4 @@ class User {
             ], $doc);
         }, $documents);
     }
-
-
-
-    // // Hide sensitive fields when serializing
-    // public function jsonSerialize(): array {
-    //     return $this->toSafeArray();
-    // }
-
-    // public function toSafeArray(): array {
-    //     $data = get_object_vars($this);
-        
-    //     // Always remove sensitive fields
-    //     unset($data['password']);
-        
-    //     // Clean nested fields
-    //     if (isset($data['loginInfo']['loginToken'])) {
-    //         unset($data['loginInfo']['loginToken']);
-    //     }
-        
-    //     if (isset($data['forgotPassword'])) {
-    //         unset($data['forgotPassword']['resetPasswordToken']);
-    //     }
-        
-    //     // Convert MongoDB types
-    //     $data['dateCreated'] = $this->dateCreated->toDateTime()->format('c');
-        
-    //     return $data;
-    // }
 }

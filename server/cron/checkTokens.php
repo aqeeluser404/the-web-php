@@ -1,50 +1,57 @@
 <?php
+// Logs a message indicating the script has started
 file_put_contents(__DIR__ . '/cron_output.log', "[" . date('Y-m-d H:i:s') . "] Script started\n", FILE_APPEND);
 
+// Include necessary files for database connection, autoloaders, and models
 require_once __DIR__ . '/../database/db.php';
 require_once __DIR__ . '/../../vendor/autoload.php';
 require_once __DIR__ . '/../src/models/userModel.php'; 
-// require_once __DIR__ . '/../src/models/rentalModel.php';
 require_once __DIR__ . '/../src/services/rentalService.php';
 
+// Import required namespaces and libraries
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 use Dotenv\Dotenv;
 use DateTime;
 use Exception;
 
+// Load environment variables from .env file
 $dotenv = Dotenv::createImmutable(__DIR__ . '/../../');
 $dotenv->safeLoad(); 
 
+// Function to log messages to a file with a rotation mechanism to manage file size
 function logMessage($message) {
     $logFile = __DIR__ . '/cron_output.log';
-    $maxSize = 100 * 1024 * 1024; // 100MB in bytes
+    $maxSize = 100 * 1024 * 1024; // Set maximum log file size to 100MB
     
-    // Rotate log if it exceeds max size
+    // If log file exists and exceeds the max size, rotate it
     if (file_exists($logFile)) {
         if (filesize($logFile) >= $maxSize) {
             $backupFile = __DIR__ . '/cron_output_' . date('Y-m-d_His') . '.log';
             rename($logFile, $backupFile);
             file_put_contents($logFile, "[" . date('Y-m-d H:i:s') . "] Log rotated\n");
             
-            // Optional: Keep only last 5 backups
+            // Limit to last 5 backup files
             $logFiles = glob(__DIR__ . '/cron_output_*.log');
             if (count($logFiles) > 5) {
                 usort($logFiles, function($a, $b) {
                     return filemtime($a) - filemtime($b);
                 });
-                unlink($logFiles[0]);
+                unlink($logFiles[0]); // Delete oldest backup
             }
         }
     }
+    // Append the new message to the log file
     file_put_contents($logFile, "[" . date('Y-m-d H:i:s') . "] " . $message . PHP_EOL, FILE_APPEND);
 }
 
+// Main class to handle token checking for logged-in users
 class TokenChecker {
     private $userModel;
     private $rentalModel;
     private $rentalService;
 
+    // Constructor initializes database models and the rental service
     public function __construct() {
         $db = Database::getDb();
         $this->userModel = $db->User;
@@ -54,6 +61,7 @@ class TokenChecker {
         logMessage("Database connection initialized.");
     }
 
+    // Method to validate tokens for logged-in users
     public function checkTokens() {
         logMessage("Starting token validation...");
         $users = $this->userModel->find(['loginInfo.isLoggedIn' => true]);
@@ -62,17 +70,20 @@ class TokenChecker {
             logMessage("No logged-in users found.");
         }
 
+        // Loop through each logged-in user
         foreach ($users as $user) {
             logMessage("Processing user ID: {$user['_id']}");
             $token = $user['loginInfo']['loginToken'];
             logMessage("User Token: " . ($token ? $token : "No token found"));
 
+            // If a token exists, validate it using JWT
             if ($token) {
                 try {
                     JWT::decode($token, new Key($_ENV['JWT_SECRET'], 'HS256'));
                     logMessage("Token for user {$user['_id']} is valid.");
                 } catch (Exception $e) {
                     logMessage("Token for user {$user['_id']} is invalid or expired: " . $e->getMessage());
+                    // If token is expired, update user status and logout
                     if ($e instanceof \Firebase\JWT\ExpiredException) {
                         $this->userModel->updateOne(
                             ['_id' => $user['_id']],
@@ -83,12 +94,13 @@ class TokenChecker {
                     }
                 }
             }
-
+            // Check and process rentals nearing their end
             $this->checkRentalsToEnd();
         }
         logMessage("Token validation completed.");
     }
 
+    // Method to call the logout endpoint for a specific user
     private function callLogoutEndpoint($userId) {
         $client = new \GuzzleHttp\Client();
         logMessage("Calling logout endpoint for user ID: {$userId}");
@@ -101,19 +113,8 @@ class TokenChecker {
             logMessage("Failed to call logout endpoint for user {$userId}: " . $error->getMessage());
         }
     }
-    
-    // private function checkRentalsToEnd() {
-    //     $now = new DateTime();
-    //     $rentalsToEnd = $this->rentalModel->find([
-    //         'rentalEndDate' => ['$lte' => $now->format('Y-m-d H:i:s')],
-    //         'status' => 'Active'
-    //     ]);
 
-    //     foreach ($rentalsToEnd as $rental) {
-    //         $this->rentalService->endRentalService($rental['_id']);
-    //     }
-    // }
-
+    // Method to find and process rentals that have reached their end date
     private function checkRentalsToEnd() {
         $now = new DateTime();
         $nowFormatted = $now->format('Y-m-d H:i:s');
@@ -121,18 +122,15 @@ class TokenChecker {
         logMessage("Current time: {$nowFormatted}");
     
         try {
-            // Debug MongoDB connection
-            // logMessage("MongoDB connection status: " . json_encode(Database::getDb()->getManager()->getServers()));
-    
-            // Build query with explicit UTCDateTime conversion
+            // Define query to find active rentals past their end date
             $query = [
                 'status' => 'Active',
                 'rentalEndDate' => [
                     '$lte' => new MongoDB\BSON\UTCDateTime($now->getTimestamp() * 1000)
                 ]
             ];
-            // logMessage("Executing query: " . json_encode($query));
-            
+
+            // Execute query and process the results
             $cursor = $this->rentalModel->find($query);
             $rentalsToEnd = iterator_to_array($cursor);
             $count = count($rentalsToEnd);
@@ -144,6 +142,8 @@ class TokenChecker {
                 logMessage("===== COMPLETED RENTAL END CHECK PROCESS =====");
                 return;
             }
+
+            // Loop through rentals to process their end
             foreach ($rentalsToEnd as $rental) {
                 $rentalId = (string)$rental['_id'];
                 $endDate = $rental['rentalEndDate'] instanceof MongoDB\BSON\UTCDateTime 
@@ -176,7 +176,7 @@ class TokenChecker {
     }
 }
 
-// Run the script if executed directly
+// If the script is executed directly, instantiate the class and run token validation
 if (php_sapi_name() === 'cli') {
     $checker = new TokenChecker();
     $checker->checkTokens();

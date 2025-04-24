@@ -221,12 +221,12 @@ class SendEmailCOntroller {
             $userContact = $body['userContact'] ?? null;
             $message = $body['message'] ?? null;
 
-            $userForEmail = $this->userCollection->findOne(['email' => $userContact['email']]);
-            if (!$userForEmail ) {
-                return $this->respond($res, ['error' => 'User not found.'], 400);
-            }
+            // $userForEmail = $this->userCollection->findOne(['email' => $userContact['email']]);
+            // if (!$userForEmail ) {
+            //     return $this->respond($res, ['error' => 'User not found.'], 400);
+            // }
 
-            $this->emailService->getInContactEmail( $userForEmail, $message);
+            $this->emailService->getInContactEmail( $userContact, $message);
             return $this->respond($res, ['message' => 'Message sent successfully.'], 200);
         } catch (Exception $e) {
             return $this->respond($res, [

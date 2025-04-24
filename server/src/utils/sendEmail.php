@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../../../vendor/autoload.php';
 require_once __DIR__ . '/createMailTransporter.php';
+require_once __DIR__ . '/createBypassTransporter.php';
 
 use PHPMailer\PHPMailer\Exception;
 use Dotenv\Dotenv;
@@ -11,9 +12,11 @@ $dotenv->load();
 
 class EmailService {
     private $transporter;
+    private $bypassTransporter;
     
     public function __construct() {
         $this->transporter = MailTransport::createMailTransporterWrapper();
+        $this->bypassTransporter = new AmazonBypassTransporter();
     }
 
     public function verifyEmail($user) {
@@ -79,34 +82,61 @@ class EmailService {
             echo 'Mailer Error: ' . $mail->ErrorInfo;
         }
     }
-
-    public function getInContactEmail($user, $message) {
-        $mail = $this->transporter;
-
-        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The Web');
-        $mail->addAddress($_ENV['BUSINESS_EMAIL_ADDRESS']);
-        $mail->Subject = "Contact Form Submission from {$user['firstName']} {$user['lastName']}";
-        $mail->Body = "
+    
+    public function getInContactEmail($userContact, $message) {
+        $sourceEmail = $_ENV['BUSINESS_EMAIL_ADDRESS']; // Verified sender email in SES
+        $recipientEmail = $_ENV['BUSINESS_EMAIL_ADDRESS']; // Receiver email
+        $subject = "Contact Form Submission from {$userContact['firstName']}";
+        $htmlBody = "
             <p>Dear The Web Team,</p>
             <p>You have received a new message from your contact form.</p>
             <p>
-                <strong>Email received from: </strong>{$user['firstName']} {$user['lastName']}<br>
-                Message: \"{$message}\"<br>
-                Email: {$user['email']}
+                <strong>Email received from:</strong> {$userContact['firstName']}<br>
+                <strong>Message:</strong> \"{$message}\"<br>
+                <strong>Email:</strong> {$userContact['email']}
             </p>
             <p>
                 Best regards,<br>
-                The Web Team
+                {$userContact['firstName']}
             </p>
         ";
 
-        try {
-            $mail->send();
-            echo 'Email sent successfully!';
-        } catch (Exception $e) {
-            echo 'Mailer Error: ' . $mail->ErrorInfo;
+        $response = $this->bypassTransporter->sendEmail($sourceEmail, $recipientEmail, $subject, $htmlBody);
+
+        if ($response['status'] === 'success') {
+            echo "Email sent successfully! Message ID: " . $response['messageId'];
+        } else {
+            echo "Error sending email: " . $response['message'];
         }
     }
+
+    // public function getInContactEmail($userContact, $message) {
+    //     $mail = $this->bypassTransporter;
+
+    //     $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The Web');
+    //     $mail->addAddress($_ENV['BUSINESS_EMAIL_ADDRESS']);
+    //     $mail->Subject = "Contact Form Submission from {$userContact['firstName']} ";
+    //     $mail->Body = "
+    //         <p>Dear The Web Team,</p>
+    //         <p>You have received a new message from your contact form.</p>
+    //         <p>
+    //             <strong>Email received from: </strong>{$userContact['firstName']}<br>
+    //             Message: \"{$message}\"<br>
+    //             Email: {$userContact['email']}
+    //         </p>
+    //         <p>
+    //             Best regards,<br>
+    //             The Web Team
+    //         </p>
+    //     ";
+
+    //     try {
+    //         $mail->send();
+    //         echo 'Email sent successfully!';
+    //     } catch (Exception $e) {
+    //         echo 'Mailer Error: ' . $mail->ErrorInfo;
+    //     }
+    // }
 
     public function requestFromTenantEmail($user, $message) {
         $mail = $this->transporter;

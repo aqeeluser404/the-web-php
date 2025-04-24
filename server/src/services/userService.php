@@ -69,13 +69,15 @@ class UserService {
                 'studentInfo' => [
                     'isRegisteredStudent' => $userDetails['studentInfo']['isRegisteredStudent'],
                     'studentNumber' => $userDetails['studentInfo']['studentNumber'],
-                    'registeredInstitution' => $userDetails['studentInfo']['registeredInstitution']
+                    'registeredInstitution' => $userDetails['studentInfo']['registeredInstitution'],
+                    'hasBursary' => $userDetails['studentInfo']['hasBursary']
                 ],
                 'verification' => [
                     'isVerified' => false,
                     'verificationToken' => JWT::encode(['userId' => (string) new ObjectId()], $_ENV['JWT_SECRET'], 'HS256'),
                     'verificationTokenExpires' => new MongoDB\BSON\UTCDateTime(time() * 1000 + 86400000) // 24 hours
-                ]
+                ],
+                'documents' => []
             ];
 
             $this->userCollection->insertOne($userModelData);
@@ -238,7 +240,8 @@ class UserService {
                 $user['studentInfo'] = isset($doc['studentInfo']) ? [
                     'isRegisteredStudent' => $doc['studentInfo']['isRegisteredStudent'] ?? false,
                     'studentNumber' => $doc['studentInfo']['studentNumber'] ?? null,
-                    'registeredInstitution' => $doc['studentInfo']['registeredInstitution'] ?? null
+                    'registeredInstitution' => $doc['studentInfo']['registeredInstitution'] ?? null,
+                    'hasBursary' => $doc['studentInfo']['hasBursary'] ?? false
                 ] : null;
     
                 $user['verification'] = isset($doc['verification']) ? [

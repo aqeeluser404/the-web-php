@@ -92,13 +92,6 @@ class RentalService {
                     }
                 }
             }
-    
-            // Increment unit occupants
-            $this->unitCollection->updateOne(
-                ['_id' => $unit['_id']],
-                ['$inc' => ['currentOccupants' => 1]]
-            );
-
             $unit['unitPrice'] = (float)$unit['unitPrice'];
             $unit['_id'] = new ObjectId($unit['_id']);
             $unit['unitType'] = (string)$unit['unitType'];
@@ -128,6 +121,12 @@ class RentalService {
             $this->unitCollection->updateOne(
                 ['_id' => $unit['_id']],
                 ['$push' => ['rentedHistory' => $newRental['_id']]]
+            );
+
+            // Increment unit occupants
+            $this->unitCollection->updateOne(
+                ['_id' => $unit['_id']],
+                ['$inc' => ['currentOccupants' => 1]]
             );
     
             return [
