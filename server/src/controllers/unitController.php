@@ -94,17 +94,51 @@ class UnitController {
         }
     }
 
+    // public function updateUnitController($req, $res) {
+    //     try {
+    //         $id = $req->getAttribute('id');
+    //         $unitDetails = $req->getParsedBody();
+
+    //         $this->unitService->updateUnitService($id, $unitDetails);
+    //         return $this->respond($res,  ['message' => 'Unit updated successfully'], 200);
+    //     } catch (Exception $e) {
+    //         return $this->respond($res, [
+    //             'error' => $e->getMessage()
+    //         ], 404);
+    //     }
+    // }
+
     public function updateUnitController($req, $res) {
         try {
             $id = $req->getAttribute('id');
             $unitDetails = $req->getParsedBody();
-
-            $this->unitService->updateUnitService($id, $unitDetails);
-            return $this->respond($res,  ['message' => 'Unit updated successfully'], 200);
+    
+            $uploadedFiles = [];
+            if (!empty($_FILES['images']['name'][0])) {
+                foreach ($_FILES['images']['name'] as $index => $name) {
+                    if ($_FILES['images']['error'][$index] === UPLOAD_ERR_OK) {
+                        $uploadedFiles[] = new UploadedFile(
+                            $_FILES['images']['tmp_name'][$index],
+                            $name,
+                            $_FILES['images']['type'][$index],
+                            $_FILES['images']['size'][$index],
+                            $_FILES['images']['error'][$index]
+                        );
+                    }
+                }
+            } elseif (!empty($_FILES['images']['name'])) {
+                $uploadedFiles[] = new UploadedFile(
+                    $_FILES['images']['tmp_name'],
+                    $_FILES['images']['name'],
+                    $_FILES['images']['type'],
+                    $_FILES['images']['size'],
+                    $_FILES['images']['error']
+                );
+            }
+            $this->unitService->updateUnitService($id, $unitDetails, ['images' => $uploadedFiles]);
+            return $this->respond($res, ['message' => 'Unit updated'], 200);
         } catch (Exception $e) {
-            return $this->respond($res, [
-                'error' => $e->getMessage()
-            ], 404);
+            return $this->respond($res, ['error' => $e->getMessage()], 400);
         }
     }
 

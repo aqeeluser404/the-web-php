@@ -30,14 +30,14 @@ $app->add(new MongoResponseMiddleware());
 // cpanel setup ----------------------------------------------------------------
 
 // Set the base path use for cpanel hosting
-// $app->setBasePath('/backend/server');
+$app->setBasePath('/backend/server');
 
 // cd into server before serving this
 // $app->setBasePath('');
 
 // cors setup -----------------------------------------------------------------
 
-$allowedOrigins = [$_ENV['HOST_LINK'],];
+$allowedOrigins = [$_ENV['HOST_LINK']];
 $app->add(function ($request, $handler) use ($allowedOrigins) {
 
     if ($request->getMethod() === 'OPTIONS') {

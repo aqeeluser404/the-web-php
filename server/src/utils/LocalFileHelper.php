@@ -41,48 +41,126 @@ class localFileHelper {
 
     private function uploadFile(UploadedFile $file, string $type): array {
         try {
-            // Validate the upload
             if ($file->getError() !== UPLOAD_ERR_OK) {
                 throw new RuntimeException('File upload error occurred');
             }
-
-            // Generate unique filename
-            $extension = pathinfo($file->getClientFilename(), PATHINFO_EXTENSION);
-            $filename = uniqid('file_') . '.' . $extension;
+    
+            // Original filename
+            $originalFilename = $file->getClientFilename();
+            $extension = pathinfo($originalFilename, PATHINFO_EXTENSION);
+            $filename = pathinfo($originalFilename, PATHINFO_FILENAME);
+    
+            // 1. Replace non-alphanum with space
+            $normalized = preg_replace("/[^a-zA-Z0-9]/", " ", $filename);
+    
+            // 2. Capitalize words
+            $capitalized = ucwords(strtolower($normalized));
+    
+            // 3. Replace spaces with underscores
+            $finalName = str_replace(" ", "_", $capitalized);
+            $finalName = $finalName ?: 'File'; // fallback if empty
+    
+            $fullFilename = $finalName . '.' . $extension;
+    
+            // Subdirectory logic
             $subdirectory = $type === 'images' ? 'images/' : 'documents/';
-            $relativePath = $subdirectory . $filename;
-            $fullPath = $this->uploadBasePath . '/' . $relativePath;
-
-            // Ensure subdirectory exists
             $subdirectoryPath = $this->uploadBasePath . '/' . $subdirectory;
             if (!file_exists($subdirectoryPath)) {
                 mkdir($subdirectoryPath, 0755, true);
             }
-
-            // Move the file to permanent storage
+    
+            // Prevent overwrite
+            $relativePath = $subdirectory . $fullFilename;
+            $fullPath = $this->uploadBasePath . '/' . $relativePath;
+            $counter = 1;
+            while (file_exists($fullPath)) {
+                $fullFilename = $finalName . '_' . $counter . '.' . $extension;
+                $relativePath = $subdirectory . $fullFilename;
+                $fullPath = $this->uploadBasePath . '/' . $relativePath;
+                $counter++;
+            }
+    
+            // Move + permissions
             $file->moveTo($fullPath);
-
-            // Explicitly set permissions (0644 for files)
             chmod($fullPath, 0644);
-            
-            // Verify permissions were set correctly
+    
             $actualPerms = substr(sprintf('%o', fileperms($fullPath)), -4);
-            if ($actualPerms != '0644') {
+            if ($actualPerms !== '0644') {
                 error_log("Warning: File permissions not set correctly for $fullPath (got $actualPerms)");
             }
-
-            // Return the same structure as ImageKit for compatibility
+    
             return [
                 ($type === 'images' ? 'imageUrl' : 'documentUrl') => $this->baseUrl . '/' . $relativePath,
-                'fileId' => $relativePath, // Using relative path as fileId for deletion
-                'fileName' => $file->getClientFilename()
+                'fileId' => $relativePath,
+                'fileName' => $fullFilename // Return formatted name
             ];
-            
+    
         } catch (Exception $e) {
             throw new RuntimeException('File upload failed: ' . $e->getMessage());
         }
     }
 
+    // private function uploadFile(UploadedFile $file, string $type): array {
+    //     try {
+    //         // Validate the upload
+    //         if ($file->getError() !== UPLOAD_ERR_OK) {
+    //             throw new RuntimeException('File upload error occurred');
+    //         }
+    
+    //         // Get original filename and extension
+    //         $originalFilename = $file->getClientFilename();
+    //         $extension = pathinfo($originalFilename, PATHINFO_EXTENSION);
+    //         $filename = pathinfo($originalFilename, PATHINFO_FILENAME);
+            
+    //         // Sanitize the filename to remove special characters
+    //         $sanitizedFilename = preg_replace("/[^a-zA-Z0-9\-_.]/", "", $filename);
+    //         $sanitizedFilename = $sanitizedFilename ?: 'file'; // fallback if name becomes empty
+            
+    //         // Construct full filename with extension
+    //         $fullFilename = $sanitizedFilename . '.' . $extension;
+            
+    //         $subdirectory = $type === 'images' ? 'images/' : 'documents/';
+    //         $relativePath = $subdirectory . $fullFilename;
+    //         $fullPath = $this->uploadBasePath . '/' . $relativePath;
+    
+    //         // Ensure subdirectory exists
+    //         $subdirectoryPath = $this->uploadBasePath . '/' . $subdirectory;
+    //         if (!file_exists($subdirectoryPath)) {
+    //             mkdir($subdirectoryPath, 0755, true);
+    //         }
+    
+    //         // Handle filename conflicts by adding a counter
+    //         $counter = 1;
+    //         while (file_exists($fullPath)) {
+    //             $fullFilename = $sanitizedFilename . '_' . $counter . '.' . $extension;
+    //             $relativePath = $subdirectory . $fullFilename;
+    //             $fullPath = $this->uploadBasePath . '/' . $relativePath;
+    //             $counter++;
+    //         }
+    
+    //         // Move the file to permanent storage
+    //         $file->moveTo($fullPath);
+    
+    //         // Set permissions
+    //         chmod($fullPath, 0644);
+            
+    //         // Verify permissions
+    //         $actualPerms = substr(sprintf('%o', fileperms($fullPath)), -4);
+    //         if ($actualPerms != '0644') {
+    //             error_log("Warning: File permissions not set correctly for $fullPath (got $actualPerms)");
+    //         }
+    
+    //         return [
+    //             ($type === 'images' ? 'imageUrl' : 'documentUrl') => $this->baseUrl . '/' . $relativePath,
+    //             'fileId' => $relativePath,
+    //             'fileName' => $originalFilename
+    //         ];
+            
+    //     } catch (Exception $e) {
+    //         throw new RuntimeException('File upload failed: ' . $e->getMessage());
+    //     }
+    // }
+    
     private function deleteFile(string $fileId): bool {
         try {
             $fullPath = $this->uploadBasePath . '/' . $fileId;

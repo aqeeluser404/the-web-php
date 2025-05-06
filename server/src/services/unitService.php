@@ -199,28 +199,76 @@ class UnitService {
         }
     }
 
-    public function updateUnitService($unitId, $unitDetails) {
+
+    // public function updateUnitService($unitId, $unitDetails) {
+    //     try {
+    //         $existingUnit = $this->unitCollection->findOne(['_id' => new ObjectId($unitId)]);
+    //         if (!$existingUnit) {
+    //             throw new Exception('Unit not found');
+    //         }
+    
+    //         // Remove any restricted fields
+    //         // unset($unitDetails['images'], $unitDetails['_id']);
+    
+    //         $this->unitCollection->updateOne(
+    //             ['_id' => new ObjectId($unitId)],
+    //             ['$set' => $unitDetails]
+    //         );
+    
+    //         // RUN UNIT CHECK AND UPDATE
+    //         $updatedUnit = $this->unitCollection->findOne(['_id' => new ObjectId($unitId)]);
+    //         $this->unitChecks($updatedUnit);
+            
+    //         return $updatedUnit;
+            
+    //     } catch (Exception $e) {
+    //         throw $e;
+    //     }
+    // }
+
+    
+    public function updateUnitService(
+        $unitId, 
+        $unitDetails, 
+        $unitImages = []
+    ) {
         try {
-            $existingUnit = $this->unitCollection->findOne(['_id' => new ObjectId($unitId)]);
-            if (!$existingUnit) {
-                throw new Exception('Unit not found');
+            
+            $unit = $this->unitCollection->findOne(['_id' => new ObjectId($unitId)]);
+            if (!$unit) throw new Exception('Unit not found');
+
+            $imageData = [];
+            if (!empty($unitImages['images'])) {
+                foreach ($unit['images'] ?? [] as $image) {
+                    $this->localFileHelper->deleteImage($image['fileId']);
+                }
+                $imageData = array_map(function($file) {
+                    return $this->localFileHelper->uploadImage($file);
+                }, $unitImages['images']);
+            } else {
+                $imageData = $unit['images'] ?? [];
             }
-    
-            // Remove any restricted fields
-            // unset($unitDetails['images'], $unitDetails['_id']);
-    
-            $this->unitCollection->updateOne(
+
+            $updateData = [
+                'floorLevel' => (string) ($unitDetails['floorLevel'] ?? $unit['floorLevel']),
+                'unitType' => (string) ($unitDetails['unitType'] ?? $unit['unitType']),
+                'unitOccupants' => (int) ($unitDetails['unitOccupants'] ?? $unit['unitOccupants']),
+                'unitDescription' => (string) ($unitDetails['unitDescription'] ?? $unit['unitDescription']),
+                'unitPrice' => (float) ($unitDetails['unitPrice'] ?? $unit['unitPrice']),
+                'genderAssignment' => $unitDetails['genderAssignment'] ?? $unit['genderAssignment'] ?? null,
+                'images' => !empty($imageData) ? $imageData : $unit['images'], // Keep old images if no new ones
+            ];
+
+            $result = $this->unitCollection->updateOne(
                 ['_id' => new ObjectId($unitId)],
-                ['$set' => $unitDetails]
+                ['$set' => $updateData]
             );
-    
-            // RUN UNIT CHECK AND UPDATE
-            $updatedUnit = $this->unitCollection->findOne(['_id' => new ObjectId($unitId)]);
-            $this->unitChecks($updatedUnit);
-            
-            return $updatedUnit;
-            
+
+            if ($result->getModifiedCount() === 0) {
+                error_log("No documents were modified");
+            }
         } catch (Exception $e) {
+            error_log('Update failed: ' . $e->getMessage());
             throw $e;
         }
     }
