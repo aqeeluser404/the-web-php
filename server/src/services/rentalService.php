@@ -237,6 +237,10 @@ class RentalService {
             if (!$user) {
                 throw new Exception('User not found');
             }
+            $rentalIds = $user['rentals'] ?? [];
+            if (empty($rentalIds)) {
+                return []; // Return empty array if no rentals exist
+            }
             $myRentals = $this->rentalCollection->find(['_id' => ['$in' => $user['rentals']]]);
 
             $results = [];
