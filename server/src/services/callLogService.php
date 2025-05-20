@@ -183,13 +183,17 @@ class CallLogService {
             }
 
             // UPDATE FK FIELD - Remove call log from user's callLogs
+            // $this->userCollection->updateOne(
+            //     ['_id' => new ObjectId($callLog['user'])],
+            //     [ '$pull' => ['callLogs' => new ObjectId($callLogId)]]
+            // );
+            // $this->userCollection->updateOne(
+            //     ['_id' => new ObjectId($callLog['user'])],
+            //     ['$pull' => ['callLogs' => null]]
+            // );
             $this->userCollection->updateOne(
                 ['_id' => new ObjectId($callLog['user'])],
-                [ '$pull' => ['callLogs' => new ObjectId($callLogId)]]
-            );
-            $this->userCollection->updateOne(
-                ['_id' => new ObjectId($callLog['user'])],
-                ['$pull' => ['callLogs' => null]]
+                ['$pull' => ['callLogs' => ['$in' => [new ObjectId($callLogId), null]]]]
             );
 
             $this->callLogCollection->deleteOne(['_id' => new ObjectId($callLogId)]);

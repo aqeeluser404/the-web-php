@@ -93,7 +93,10 @@ class UserController {
                 ['$set' => $updateData]
             );
 
-            $maxAge = 24 * 60 * 60;                     // 1 day till token expires
+            // $maxAge = 24 * 60 * 60;                     // 1 day till token expires
+            // $maxAge = 60;   // Token expires in 1 minute
+            $maxAge = 7200; // Token expires in 2 hours (7200 seconds)
+            
             setcookie('token', $token, [
                 'expires'   => time() + $maxAge,
                 'path'      => '/',

@@ -14,31 +14,41 @@ use Dotenv\Dotenv;
 $dotenv = Dotenv::createImmutable(__DIR__ . '/../../../');
 $dotenv->load();
 
-class UserService {
+class UserService
+{
     private $userCollection;
+    private $rentalCollection;
+    private $unitCollection;
+    private $callLogCollection;
     // private $ImageKitService;
     private $emailService;
     private $localFileHelper;
 
-    public function __construct() {
+    public function __construct()
+    {
         $db = Database::getDb();
         $this->userCollection = $db->User;
+        $this->rentalCollection = $db->Rental;
+        $this->unitCollection = $db->Unit;
+        $this->callLogCollection = $db->calllogs;
         // $this->ImageKitService = new ImageKitService();
         $this->emailService = new EmailService();
-        $this->localFileHelper = new LocalFileHelper(); 
+        $this->localFileHelper = new LocalFileHelper();
     }
 
-    protected function safeDateFormat($dateValue) {
+    protected function safeDateFormat($dateValue)
+    {
         if ($dateValue instanceof UTCDateTime) {
             return $dateValue->toDateTime()->format('Y-m-d\TH:i:s.vP');
         }
         if (is_string($dateValue)) {
             return $dateValue;
         }
-        return null; 
+        return null;
     }
 
-    public function userRegisterService($userDetails) {
+    public function userRegisterService($userDetails)
+    {
         try {
             $exists = $this->userCollection->findOne([
                 '$or' => [
@@ -48,10 +58,13 @@ class UserService {
             ]);
             if ($exists) {
                 $conflict = [];
-                if ($exists['username'] === $userDetails['username']) $conflict[] = 'username';
-                if ($exists['email'] === $userDetails['email']) $conflict[] = 'email';
+                if ($exists['username'] === $userDetails['username'])
+                    $conflict[] = 'username';
+                if ($exists['email'] === $userDetails['email'])
+                    $conflict[] = 'email';
                 throw new Exception(implode(' and ', $conflict) . ' already exists');
-            };
+            }
+            ;
 
             $userType = ($_ENV['CREATE_ADMIN'] === 'true') ? 'admin' : 'user';
             $hashedPassword = password_hash($userDetails['password'], PASSWORD_BCRYPT);
@@ -74,16 +87,39 @@ class UserService {
                 ],
                 'verification' => [
                     'isVerified' => false,
-                    'verificationToken' => JWT::encode(['userId' => (string) new ObjectId()], $_ENV['JWT_SECRET'], 'HS256'),
-                    'verificationTokenExpires' => new MongoDB\BSON\UTCDateTime(time() * 1000 + 86400000) // 24 hours
+                    'verificationToken' => null,
+                    'verificationTokenExpires' => null
                 ],
                 'documents' => []
             ];
 
-            $this->userCollection->insertOne($userModelData);
+            $insertResult = $this->userCollection->insertOne($userModelData);
 
-            // SEND VERIFICATION EMAIL
-            $this->emailService->verifyEmail($userModelData);
+            $insertedId = $insertResult->getInsertedId();
+            $tokenPayload = [
+                'userId' => (string) $insertedId,
+                'exp' => time() + 86400
+            ];
+            $verificationToken = JWT::encode($tokenPayload, $_ENV['JWT_SECRET'], 'HS256');
+
+            // Update user with verification token
+            $this->userCollection->updateOne(
+                ['_id' => $insertedId],
+                [
+                    '$set' => [
+                        'verification.verificationToken' => $verificationToken,
+                        'verification.verificationTokenExpires' => new MongoDB\BSON\UTCDateTime($tokenPayload['exp'] * 1000)
+                    ]
+                ]
+            );
+
+            $newUser = $this->userCollection->findOne(['_id' => $insertedId]);
+            if (!$newUser) {
+                throw new Exception('Failed to retrieve newly registered user');
+            }
+
+            // Send verification email
+            $this->emailService->verifyEmail($newUser);
 
             return true;
         } catch (Exception $e) {
@@ -91,7 +127,9 @@ class UserService {
         }
     }
 
-    public function userLoginService($username, $email, $password) {
+
+    public function userLoginService($username, $email, $password)
+    {
         try {
             $user = $this->userCollection->findOne([
                 '$or' => [
@@ -107,21 +145,29 @@ class UserService {
                 error_log("Password verification failed for user: " . $user['username']);
                 throw new Exception('Invalid password');
             }
-    
+
             // GENERATE JWT TOKEN
             $token = JWT::encode(
-                ['_id' => (string) $user['_id'], 'userType' => $user['userType']],
-                $_ENV['JWT_SECRET'], 
+                [
+                    '_id' => (string) $user['_id'],
+                    'userType' => $user['userType'],
+                    // 'exp' => time() + 86400 // Token expires in 24 hours (86400 seconds)
+                    // 'exp' => time() + 60 // Token expires in 60 seconds (1 minute)
+                    'exp' => time() + 7200 // Token expires in 2 hours (7200 seconds)
+                ],
+                $_ENV['JWT_SECRET'],
                 'HS256'
             );
+
             return $token;
         } catch (Exception $e) {
             error_log("Error in userLoginService: " . $e->getMessage());
             throw $e;
         }
     }
-    
-    public function userLogoutService($id) {
+
+    public function userLogoutService($id)
+    {
         try {
             $user = $this->userCollection->findOne(['_id' => new ObjectId($id)]);
             if (!$user) {
@@ -131,10 +177,12 @@ class UserService {
             // Update user login status
             $this->userCollection->updateOne(
                 ['_id' => new ObjectId($id)],
-                ['$set' => [
-                    'loginInfo.isLoggedIn' => false,
-                    'loginInfo.loginToken' => null
-                ]]
+                [
+                    '$set' => [
+                        'loginInfo.isLoggedIn' => false,
+                        'loginInfo.loginToken' => null
+                    ]
+                ]
             );
 
             return 'User logged out successfully';
@@ -143,7 +191,8 @@ class UserService {
         }
     }
 
-    public function findUsersLoggedInService() {
+    public function findUsersLoggedInService()
+    {
         try {
             $users = $this->userCollection->find(['loginInfo.isLoggedIn' => true]);
             return iterator_to_array($users);
@@ -152,7 +201,8 @@ class UserService {
         }
     }
 
-    public function findUsersFrequentlyLoggedInService() {
+    public function findUsersFrequentlyLoggedInService()
+    {
         try {
             $users = $this->userCollection->find([], ['sort' => ['loginInfo.loginCount' => -1]]);
             return iterator_to_array($users);
@@ -161,7 +211,8 @@ class UserService {
         }
     }
 
-    public function findUserByIdService($id) {
+    public function findUserByIdService($id)
+    {
         try {
             $user = $this->userCollection->findOne(['_id' => new ObjectId($id)]);
             if (!$user) {
@@ -173,18 +224,19 @@ class UserService {
         }
     }
 
-    public function findUserByTokenService(string $token) {
+    public function findUserByTokenService(string $token)
+    {
         try {
             $decoded = JWT::decode($token, new Key($_ENV['JWT_SECRET'], 'HS256'));
-            
+
             $user = $this->userCollection->findOne([
                 '_id' => new MongoDB\BSON\ObjectId($decoded->_id)
             ]);
-            
+
             if (!$user) {
                 throw new Exception('User not found');
             }
-            
+
             return $user;
         } catch (Exception $e) {
             error_log("FindUserByTokenService error: " . $e->getMessage());
@@ -192,7 +244,8 @@ class UserService {
         }
     }
 
-    public function createUserService($userDetails) {
+    public function createUserService($userDetails)
+    {
         try {
             $existingUser = $this->userCollection->findOne(['username' => $userDetails['username']]);
             if ($existingUser) {
@@ -219,14 +272,15 @@ class UserService {
         }
     }
 
-    public function findAllUsersService(): array {
+    public function findAllUsersService(): array
+    {
         try {
             $users = $this->userCollection->find();
-            
+
             $results = [];
             foreach ($users as $doc) {
                 $user = [
-                    '_id' => (string)$doc['_id'],
+                    '_id' => (string) $doc['_id'],
                     'firstName' => $doc['firstName'] ?? null,
                     'lastName' => $doc['lastName'] ?? null,
                     'email' => $doc['email'] ?? null,
@@ -236,46 +290,46 @@ class UserService {
                     'gender' => $doc['gender'] ?? null,
                     'dateCreated' => $this->safeDateFormat($doc['dateCreated'] ?? null)
                 ];
-    
+
                 $user['studentInfo'] = isset($doc['studentInfo']) ? [
                     'isRegisteredStudent' => $doc['studentInfo']['isRegisteredStudent'] ?? false,
                     'studentNumber' => $doc['studentInfo']['studentNumber'] ?? null,
                     'registeredInstitution' => $doc['studentInfo']['registeredInstitution'] ?? null,
                     'hasBursary' => $doc['studentInfo']['hasBursary'] ?? false
                 ] : null;
-    
+
                 $user['verification'] = isset($doc['verification']) ? [
                     'isVerified' => $doc['verification']['isVerified'] ?? false,
                     'verificationToken' => $doc['verification']['verificationToken'] ?? null,
                     'verificationTokenExpires' => $doc['verification']['verificationTokenExpires'] ?? null
                 ] : null;
-    
+
                 $user['loginInfo'] = isset($doc['loginInfo']) ? [
                     'lastLogin' => $this->safeDateFormat($doc['loginInfo']['lastLogin'] ?? null),
                     'isLoggedIn' => $doc['loginInfo']['isLoggedIn'] ?? false,
                     'loginCount' => $doc['loginInfo']['loginCount'] ?? 0
                 ] : null;
-    
-                $user['documents'] = isset($doc['documents']) ? array_map(function($document) {
+
+                $user['documents'] = isset($doc['documents']) ? array_map(function ($document) {
                     return [
                         'documentUrl' => $document['documentUrl'] ?? null,
                         'fileId' => $document['fileId'] ?? null,
                         'uploadDate' => $this->safeDateFormat($document['uploadDate'] ?? null),
-                        '_id' => isset($document['_id']) ? (string)$document['_id'] : null
+                        '_id' => isset($document['_id']) ? (string) $document['_id'] : null
                     ];
                 }, $doc['documents']->getArrayCopy()) : [];
-    
-                $user['rentals'] = isset($doc['rentals']) 
-                    ? array_map(fn($id) => (string)$id, $doc['rentals']->getArrayCopy())
+
+                $user['rentals'] = isset($doc['rentals'])
+                    ? array_map(fn($id) => (string) $id, $doc['rentals']->getArrayCopy())
                     : [];
-    
-                $user['callLogs'] = isset($doc['callLogs']) 
-                    ? array_map(fn($id) => (string)$id, $doc['callLogs']->getArrayCopy())
+
+                $user['callLogs'] = isset($doc['callLogs'])
+                    ? array_map(fn($id) => (string) $id, $doc['callLogs']->getArrayCopy())
                     : [];
-    
+
                 $results[] = $user;
             }
-            
+
             return $results;
         } catch (Exception $e) {
             error_log('Error in findAllUsersService: ' . $e->getMessage());
@@ -283,7 +337,8 @@ class UserService {
         }
     }
 
-    public function updateUserService($id, $userDetails) {
+    public function updateUserService($id, $userDetails)
+    {
         try {
             if (isset($userDetails['password'])) {
                 $userDetails['password'] = password_hash($userDetails['password'], PASSWORD_BCRYPT);
@@ -306,11 +361,13 @@ class UserService {
                 $verificationToken = JWT::encode(['userId' => (string) $currentUser['_id']], $_ENV['JWT_SECRET'], 'HS256');
                 $this->userCollection->updateOne(
                     ['_id' => new ObjectId($id)],
-                    ['$set' => [
-                        'verification.isVerified' => false,
-                        'verification.verificationToken' => $verificationToken,
-                        'verification.verificationTokenExpires' => new UTCDateTime(time() * 1000 + 3600000) // 1 hour
-                    ]]
+                    [
+                        '$set' => [
+                            'verification.isVerified' => false,
+                            'verification.verificationToken' => $verificationToken,
+                            'verification.verificationTokenExpires' => new UTCDateTime(time() * 1000 + 3600000) // 1 hour
+                        ]
+                    ]
                 );
             }
             return $this->userCollection->findOne(['_id' => new ObjectId($id)]);
@@ -319,12 +376,43 @@ class UserService {
         }
     }
 
-    public function deleteUserService($id) {
+    public function deleteUserService($id)
+    {
         try {
+            // Fetch all rentals associated with the user before deleting anything
+            $rentals = $this->rentalCollection->find(['user' => new ObjectId($id)])->toArray();
+
+            // Remove rentals from the rental collection and update the corresponding units
+            foreach ($rentals as $rental) {
+                $this->rentalCollection->deleteOne(['_id' => $rental['_id']]);
+
+                // Remove rental from corresponding unit's rentalHistory
+                $this->unitCollection->updateOne(
+                    ['_id' => new ObjectId($rental['unit'])],
+                    [
+                        '$inc' => ['currentOccupants' => -1],
+                        '$pull' => ['rentedHistory' => $rental['_id']]
+                    ]
+                );
+            }
+
+            // Remove associated call logs BEFORE deleting the user
+            $this->callLogCollection->deleteMany([
+                '$or' => [
+                    ['user' => new ObjectId($id)],  // Handles ObjectId format
+                    ['user' => $id]                 // Handles string format
+                ]
+            ]);
+
+            // Delete all related user documents from other collections BEFORE deleting the user
+            $this->clearAllUserDocsService($id);
+
+            // Now, delete the user safely AFTER all dependencies are handled
             $result = $this->userCollection->deleteOne(['_id' => new ObjectId($id)]);
             if ($result->getDeletedCount() === 0) {
                 throw new Exception('User not found');
             }
+
             return true;
         } catch (Exception $e) {
             throw $e;
@@ -333,7 +421,8 @@ class UserService {
 
     // IMAGEKIT IMPLEMENTATION
 
-    public function uploadUserDocsService(string $userId, array $userDocs) {
+    public function uploadUserDocsService(string $userId, array $userDocs)
+    {
         try {
             $user = $this->userCollection->findOne(['_id' => new MongoDB\BSON\ObjectId($userId)]);
             if (!$user) {
@@ -349,15 +438,19 @@ class UserService {
 
                 $updateResult = $this->userCollection->updateOne(
                     ['_id' => new MongoDB\BSON\ObjectId($userId)],
-                    ['$push' => ['documents' => [
-                        '$each' => array_map(function($doc) {
-                            return [
-                                'documentUrl' => $doc['documentUrl'],
-                                'fileId' => $doc['fileId'],
-                                'uploadDate' => new MongoDB\BSON\UTCDateTime()
-                            ];
-                        }, $uploadedDocuments)
-                    ]]]
+                    [
+                        '$push' => [
+                            'documents' => [
+                                '$each' => array_map(function ($doc) {
+                                    return [
+                                        'documentUrl' => $doc['documentUrl'],
+                                        'fileId' => $doc['fileId'],
+                                        'uploadDate' => new MongoDB\BSON\UTCDateTime()
+                                    ];
+                                }, $uploadedDocuments)
+                            ]
+                        ]
+                    ]
                 );
 
                 if ($updateResult->getModifiedCount() === 0) {
@@ -371,7 +464,8 @@ class UserService {
     }
 
 
-    public function clearAllUserDocsService(string $userId) {
+    public function clearAllUserDocsService(string $userId)
+    {
         try {
             $user = $this->userCollection->findOne(['_id' => new MongoDB\BSON\ObjectId($userId)]);
             if (!$user) {
@@ -394,7 +488,8 @@ class UserService {
     }
 
 
-    public function removeUserDocService(string $userId, string $fileId) {
+    public function removeUserDocService(string $userId, string $fileId)
+    {
         try {
             $user = $this->userCollection->findOne(['_id' => new MongoDB\BSON\ObjectId($userId)]);
             if (!$user) {

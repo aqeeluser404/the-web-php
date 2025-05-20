@@ -20,9 +20,11 @@ class SendEmailCOntroller {
     private $userCollection;
     private $unitCollection;
     private $rentalCollection;
+    private $callLogCollection;
 
     public function __construct() {
         $db = Database::getDb();
+        $this->callLogCollection = $db->calllogs;
         $this->userCollection = $db->User;
         $this->unitCollection = $db->Unit;
         $this->rentalCollection = $db->Rental;
@@ -235,25 +237,6 @@ class SendEmailCOntroller {
         }
     }
 
-    // ---> NOT USING
-    public function sendUserRequestController($req, $res) {
-        try {
-            $id = $req->getAttribute('id');
-            $message = $req->getParsedBody();
-
-            $user = $this->userCollection->findOne(['_id' => new ObjectId($id)]);
-            if (!$user) {
-                return $this->respond($res, ['error' => 'User not found.'], 400);
-            }
-            $this->emailService->requestFromTenantEmail( $user, $message);
-            return $this->respond($res, ['message' => 'Message sent successfully.'], 200);
-        } catch (Exception $e) {
-            return $this->respond($res, [
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
     public function rentalNotifcationController($req, $res) {
         try {
             $body = $req->getParsedBody();
@@ -282,7 +265,26 @@ class SendEmailCOntroller {
         }
     }
 
-    // -----------------------------------------------------------------------------------------------------------------> WORKING
+    public function sendRentalActionReminderController($req, $res) {
+        try {
+            $body = $req->getParsedBody();
+            $userId = $body['userId'] ?? null;
+            $message = $body['message'] ?? null;
+
+            $user = $this->userCollection->findOne(['_id' => new ObjectId($userId)]);
+            if (!$user) {
+                return $this->respond($res, ['error' => 'User not found.'], 400);
+            }
+
+            $this->emailService->sendRentalActionReminderEmail($user, $message);
+            return $this->respond($res, ['message' => 'Reminder email sent successfully.'], 200);
+        } catch (Exception $e) {
+            return $this->respond($res, [
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function sendRentalRejectionController($req, $res) {
         try {
             $body = $req->getParsedBody();
@@ -313,6 +315,31 @@ class SendEmailCOntroller {
                 return $this->respond($res, ['error' => 'User not found.'], 400);
             }
             $this->emailService->sendExtendedDateEmail( $user, $message);
+            return $this->respond($res, ['message' => 'Message sent successfully.'], 200);
+        } catch (Exception $e) {
+            return $this->respond($res, [
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function sendVendorController($req, $res) {
+        try {
+            $body = $req->getParsedBody();
+            $userId = $body['userId'] ?? null;
+            $callLogId = $body['callLogId'] ?? null;
+
+            $user = $this->userCollection->findOne(['_id' => new ObjectId($userId)]);
+            if (!$user) {
+                return $this->respond($res, ['error' => 'User not found.'], 400);
+            }
+            $callLog = $this->callLogCollection->findOne(['_id' => new ObjectId($callLogId)]);
+            if (!$callLog) {
+                return $this->respond($res, ['error' => 'Call Log not found.'], 400);
+            }
+
+
+            $this->emailService->sendVendorEmail( $user, $callLog);
             return $this->respond($res, ['message' => 'Message sent successfully.'], 200);
         } catch (Exception $e) {
             return $this->respond($res, [

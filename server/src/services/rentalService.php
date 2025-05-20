@@ -71,7 +71,11 @@ class RentalService {
                     }
                     $accessKey = $unit['accessKey']['assignedKey'];
                 } else {
-                    $accessKey = bin2hex(random_bytes(8));
+                    $characters = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+                    $accessKey = '';
+                    for ($i = 0; $i < 6; $i++) {
+                        $accessKey .= $characters[random_int(0, strlen($characters) - 1)];
+                    }
                     $this->unitCollection->updateOne(
                         ['_id' => $unit['_id']],
                         ['$set' => [
@@ -145,17 +149,17 @@ class RentalService {
             if (!$rental) {
                 throw new Exception('Rental not found');
             }
+            // if ($rental['status'] !== 'Pending' && $rental['status'] !== 'Rejected') {
+            //     throw new Exception('Cannot delete an approved rental');
+            // }
 
-            if ($rental['status'] !== 'Pending' && $rental['status'] !== 'Rejected') {
-                throw new Exception('Cannot delete an approved rental');
-            }
-
+            // remove rental from USER's rentals
             $this->userCollection->updateOne(
                 ['_id' => new ObjectId($rental['user'])],
                 ['$pull' => ['rentals' => new ObjectId($rentalId)]]
             );
-    
-            // Remove rental from unit's rentedHistory and decrement current occupants
+
+            // Remove rental from UNIT'S rentedHistory and decrement current occupants
             $unit = $this->unitCollection->findOne(['_id' => new ObjectId($rental['unit'])]);
             if ($unit) {
                 $this->unitCollection->updateOne(
@@ -166,7 +170,6 @@ class RentalService {
                     ]
                 );
             }
-    
             // Delete the rental
             $this->rentalCollection->deleteOne(['_id' => new ObjectId($rentalId)]);
     

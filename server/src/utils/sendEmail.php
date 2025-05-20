@@ -138,33 +138,6 @@ class EmailService {
     //     }
     // }
 
-    public function requestFromTenantEmail($user, $message) {
-        $mail = $this->transporter;
-
-        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The Web');
-        $mail->addAddress($_ENV['BUSINESS_EMAIL_ADDRESS']);
-        $mail->Subject = "Contact Administration from {$user['firstName']} {$user['lastName']}";
-        $mail->Body = "
-            <p>Dear The Web Team,</p>
-            <p>You have received a new request from one of your tenants.</p>
-            <p>
-                <strong>Email received from: </strong>{$user['firstName']} {$user['lastName']}<br>
-                <strong>Tenant ID: </strong>{$user['_id']}<br>
-                {$message}
-            </p>
-            <p>
-                Best regards,<br>
-                The Web Team
-            </p>
-        ";
-
-        try {
-            $mail->send();
-            echo 'Email sent successfully!';
-        } catch (Exception $e) {
-            echo 'Mailer Error: ' . $mail->ErrorInfo;
-        }
-    }
 
     public function rentalNotificationEmail($user, $unit, $rental) {
         $mail = $this->transporter;
@@ -201,6 +174,36 @@ class EmailService {
         try {
             $mail->send();
             echo 'Email sent successfully!';
+        } catch (Exception $e) {
+            echo 'Mailer Error: ' . $mail->ErrorInfo;
+        }
+    }
+
+    // NEW FUNCTION - ADD TO EXPRESS
+    public function sendRentalActionReminderEmail($user, $message) {
+        $mail = $this->transporter;
+
+        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The Web');
+        $mail->addAddress($user['email']);
+        $mail->Subject = 'Action Required: Rental Application Update';
+        $mail->Body = "
+            <p>Dear {$user['firstName']},</p>
+            <p>We want to remind you that further action is required to complete your rental application.</p>
+            <p>{$message}</p>
+            <p>Please review the necessary steps and complete them at your earliest convenience.</p>
+            <p>
+                For any questions, feel free to email us at 
+                <a href=\"mailto:{$_ENV['BUSINESS_EMAIL_ADDRESS']}\">{$_ENV['BUSINESS_EMAIL_ADDRESS']}</a>.
+            </p>
+            <p>
+                Best regards,<br>
+                The Web Team
+            </p>
+        ";
+
+        try {
+            $mail->send();
+            echo 'Action reminder email sent successfully!';
         } catch (Exception $e) {
             echo 'Mailer Error: ' . $mail->ErrorInfo;
         }
@@ -272,6 +275,48 @@ class EmailService {
         try {
             $mail->send();
             echo 'Extension email sent successfully!';
+        } catch (Exception $e) {
+            echo 'Mailer Error: ' . $mail->ErrorInfo;
+        }
+    }
+
+    // NEW FUNCTION - ADD TO EXPRESS
+    public function sendVendorEmail($user, $callLog) {
+        $mail = $this->transporter;
+
+        // Format the request creation date
+        $formattedStartDate = isset($callLog['createdAt']) 
+            ? date('d M Y', strtotime($callLog['createdAt'])) 
+            : '[Start Date Not Specified]';
+
+        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The Web');
+        $mail->addAddress($callLog['vendorInfo']['vendorContact']);
+        $mail->Subject = "Log Number {$callLog['logNumber']} | Request from {$user['firstName']}";
+
+        $mail->Body = "
+            <p>Dear {$callLog['vendorInfo']['vendorType']},</p>
+            <p>We have received a call log request from {$user['firstName']} and require your response.</p>
+            <p>
+                <strong>Request Details:</strong><br>
+                - <strong>Issued On:</strong> {$formattedStartDate}<br>
+                - <strong>Call Log Number:</strong> {$callLog['logNumber']}<br>
+                - <strong>Call Log Type:</strong> {$callLog['callType']}<br>
+            </p>
+            <p>
+                Please reply to this email to receive the full request details.
+            </p>
+            <p>
+                For inquiries, feel free to reach out to us at <a href=\"mailto:{$_ENV['BUSINESS_EMAIL_ADDRESS']}\">{$_ENV['BUSINESS_EMAIL_ADDRESS']}</a>.
+            </p>
+            <p>
+                Best regards,<br>
+                The Web Team
+            </p>
+        ";
+
+        try {
+            $mail->send();
+            echo 'Email sent successfully!';
         } catch (Exception $e) {
             echo 'Mailer Error: ' . $mail->ErrorInfo;
         }
