@@ -101,16 +101,24 @@ class RentalService {
             $unit['unitType'] = (string)$unit['unitType'];
             $user['_id'] = new ObjectId($user['_id']);
 
+            // Handle parking (optional)
+            $parking = $rentalDetails['parking'] ?? ['hasParking' => false, 'fee' => 0.0];
+            if (!isset($parking['fee'])) {
+                $parking['fee'] = 50.0; // default placeholder fee
+            }
+
+            // Adjust rental price if parking is selected
+            $totalRentalPrice = $unit['unitPrice'] + ($parking['hasParking'] ? $parking['fee'] : 0.0);
+
             $rental = new Rental(
-                //...
-                // status: 'Pending',
                 rentalStartDate: $rentalDetails['rentalStartDate'] ?? null,
                 rentalEndDate: $rentalDetails['rentalEndDate'] ?? null,
-                rentalPrice: $unit['unitPrice'],
+                rentalPrice: $totalRentalPrice,
                 unit: $unit['_id'],
                 unitType: $unit['unitType'],
                 user: $user['_id'],
                 accessKey: $accessKey ?? $unit['accessKey']['assignedKey'] ?? null,
+                parking: $parking
             );
     
             $result = $this->rentalCollection->insertOne($rental->toArray());
@@ -212,7 +220,11 @@ class RentalService {
                     'unit' => (string)$doc['unit'] ?? null,
                     'unitType' => $doc['unitType'] ?? null,
                     'user' => (string)$doc['user'] ?? null,
-                    'accessKey' => $doc['accessKey'] ?? null
+                    'accessKey' => $doc['accessKey'] ?? null,
+                    'parking' => [
+                        'hasParking' => $doc['parking']['hasParking'] ?? false,
+                        'fee' => $doc['parking']['fee'] ?? 0.0,
+                    ],
                 ];
 
                 $rental['payerData'] = [
@@ -260,7 +272,11 @@ class RentalService {
                     'unit' => (string)$doc['unit'] ?? null,
                     'unitType' => $doc['unitType'] ?? null,
                     'user' => (string)$doc['user'] ?? null,
-                    'accessKey' => $doc['accessKey'] ?? null
+                    'accessKey' => $doc['accessKey'] ?? null,
+                    'parking' => [
+                        'hasParking' => $doc['parking']['hasParking'] ?? false,
+                        'fee' => $doc['parking']['fee'] ?? 0.0,
+                    ],
                 ];
 
                 $rental['payerData'] = [

@@ -39,6 +39,9 @@ class Rental {
     /** @var string */
     public $accessKey;
 
+    /** @var array{selected: bool, fee: float} */
+    public $parking;
+
     public function __construct(
         float $rentalPrice,
         string $unit,
@@ -49,7 +52,8 @@ class Rental {
         ?string $rentalStartDate = null,
         ?string $rentalEndDate = null,
         ?string $earlyEndDate = null,
-        array $payerData = []
+        array $payerData = [],
+        ?array $parking = null
     ) {
         $this->applicationDate = new UTCDateTime();
         $this->status = in_array($status, ['Pending', 'Rejected', 'Active', 'Ended']) ? $status : 'Pending';
@@ -73,6 +77,12 @@ class Rental {
             'score' => 0,
             'isValidated' => false
         ], $payerData);
+
+        // Default parking data if not provided
+        $this->parking = array_merge([
+            'hasParking' => false,
+            'fee' => 50.0 // Placeholder fee
+        ], $parking ?? []);
     }
 
     public function toArray(): array {
@@ -87,7 +97,8 @@ class Rental {
             'unit' => $this->unit,
             'unitType' => $this->unitType,
             'user' => $this->user,
-            'accessKey' => $this->accessKey
+            'accessKey' => $this->accessKey,
+            'parking' => $this->parking
         ];
     }
 }
