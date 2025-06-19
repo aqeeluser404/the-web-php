@@ -90,7 +90,8 @@ class UnitService {
                 ];
             }, $unitImages['images']);
     
-            $unitDetails['unitNumber'] = (int)$unitDetails['unitNumber'];
+            // $unitDetails['unitNumber'] = (int)$unitDetails['unitNumber'];
+            $unitDetails['unitNumber'] = (string)$unitDetails['unitNumber'];
             $unitDetails['floorLevel'] = (string)$unitDetails['floorLevel'];
             $unitDetails['unitType'] = (string)$unitDetails['unitType'];
             $unitDetails['unitOccupants'] = (int)$unitDetails['unitOccupants'];
@@ -250,6 +251,7 @@ class UnitService {
             }
 
             $updateData = [
+                'unitNumber' => (string) ($unitDetails['unitNumber'] ?? $unit['unitNumber']),
                 'floorLevel' => (string) ($unitDetails['floorLevel'] ?? $unit['floorLevel']),
                 'unitType' => (string) ($unitDetails['unitType'] ?? $unit['unitType']),
                 'unitOccupants' => (int) ($unitDetails['unitOccupants'] ?? $unit['unitOccupants']),

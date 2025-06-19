@@ -63,8 +63,7 @@ class UserService
                 if ($exists['email'] === $userDetails['email'])
                     $conflict[] = 'email';
                 throw new Exception(implode(' and ', $conflict) . ' already exists');
-            }
-            ;
+            };
 
             $userType = ($_ENV['CREATE_ADMIN'] === 'true') ? 'admin' : 'user';
             $hashedPassword = password_hash($userDetails['password'], PASSWORD_BCRYPT);
@@ -247,10 +246,20 @@ class UserService
     public function createUserService($userDetails)
     {
         try {
-            $existingUser = $this->userCollection->findOne(['username' => $userDetails['username']]);
-            if ($existingUser) {
-                throw new Exception('Username already exists');
-            }
+            $exists = $this->userCollection->findOne([
+                '$or' => [
+                    ['username' => $userDetails['username']],
+                    ['email' => $userDetails['email']]
+                ]
+            ]);
+            if ($exists) {
+                $conflict = [];
+                if ($exists['username'] === $userDetails['username'])
+                    $conflict[] = 'username';
+                if ($exists['email'] === $userDetails['email'])
+                    $conflict[] = 'email';
+                throw new Exception(implode(' and ', $conflict) . ' already exists');
+            };
 
             $hashedPassword = password_hash($userDetails['password'], PASSWORD_BCRYPT);
 
@@ -262,7 +271,20 @@ class UserService
                 'username' => $userDetails['username'],
                 'password' => $hashedPassword,
                 'userType' => $userDetails['userType'],
-                'dateCreated' => new MongoDB\BSON\UTCDateTime()
+                'dateCreated' => new MongoDB\BSON\UTCDateTime(),
+                'gender' => $userDetails['gender'],
+                'studentInfo' => [
+                    'isRegisteredStudent' => $userDetails['studentInfo']['isRegisteredStudent'],
+                    'studentNumber' => $userDetails['studentInfo']['studentNumber'],
+                    'registeredInstitution' => $userDetails['studentInfo']['registeredInstitution'],
+                    'hasBursary' => $userDetails['studentInfo']['hasBursary']
+                ],
+                'verification' => [
+                    'isVerified' => false,
+                    'verificationToken' => null,
+                    'verificationTokenExpires' => null
+                ],
+                'documents' => []
             ];
 
             $this->userCollection->insertOne($userModelData);

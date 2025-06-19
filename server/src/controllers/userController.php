@@ -37,6 +37,19 @@ class UserController {
             ->withHeader('Content-Type', 'text/plain');
     }
 
+    public function createUserController(Request $req, Response $res): Response {
+        try {
+            $userDetails = $req->getParsedBody();
+            $this->userService->createUserService($userDetails);
+
+            return $this->respond($res,  ['message' => 'User created successfully'], 201);
+        } catch (Exception $e) {
+            return $this->respond($res, [
+                'error' => $e->getMessage()
+            ], 400);
+        }
+    }
+
     public function userRegisterController(Request $req, Response $res): Response {
         try {
             $userDetails = $req->getParsedBody();
@@ -189,17 +202,6 @@ class UserController {
             return $this->respond($res, [
                 'error' => $e->getMessage()
             ], 500);
-        }
-    }
-
-    public function createUserController($req, $res) {
-        try {
-            $this->userService->createUserService($req->getParsedBody());
-            return $this->respond($res,  ['message' => 'User created successfully'], 201);
-        } catch (Exception $e) {
-            return $this->respond($res, [
-                'error' => $e->getMessage()
-            ], 400);
         }
     }
 

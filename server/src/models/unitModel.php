@@ -69,7 +69,8 @@ use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
 
 class Unit {
-    /** @var int */
+    // /** @var int */
+    /** @var string */
     public $unitNumber;
     
     /** @var string */
@@ -114,7 +115,8 @@ class Unit {
     // public $__v;
 
     public function __construct(
-        int $unitNumber,
+        // int $unitNumber,
+        string $unitNumber,
         string $floorLevel,
         string $unitType,
         int $unitOccupants,

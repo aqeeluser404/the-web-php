@@ -12,6 +12,7 @@ class CallLog {
     public $closedAt;
     public $user;
     public $vendorInfo;  
+    public $vendorNotes;
 
     public function __construct(
         $logNumber,
@@ -20,7 +21,8 @@ class CallLog {
         $status = 'Pending',
         ?string $createdAt = null,
         ?string $closedAt = null,
-        $vendorInfo = []
+        $vendorInfo = [],
+        $vendorNotes = []
     ) {
         $this->logNumber = $logNumber;
         $this->callType = $callType;
@@ -33,6 +35,11 @@ class CallLog {
             'vendorType' => null,
             'vendorContact' => null,
             'vendorAssignedDate' => new UTCDateTime()
-        ], $vendorInfo);        
+        ], $vendorInfo);     
+
+        $this->vendorNotes = array_merge([
+            'notes' => null,
+            'resolution' => null
+        ], $vendorNotes);
     }
 }

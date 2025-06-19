@@ -22,7 +22,7 @@ class EmailService {
     public function verifyEmail($user) {
         $mail = $this->transporter;
 
-        $verificationLink = $_ENV['HOST_LINK'] . '/#/verify-email?token=' . $user['verification']['verificationToken'];
+        $verificationLink = $_ENV['HOST_LINK_0'] . '/verify-email?token=' . $user['verification']['verificationToken'];
         $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The Web');
         $mail->addAddress($user['email']);
         $mail->Subject = 'Verify Email';
@@ -54,7 +54,7 @@ class EmailService {
     public function sendResetEmail($user, $token) {
         $mail = $this->transporter;
 
-        $resetLink = $_ENV['HOST_LINK'] . '/#/reset-password?token=' . $token;
+        $resetLink = $_ENV['HOST_LINK_0'] . '/reset-password?token=' . $token;
         $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The Web');
         $mail->addAddress($user['email']);
         $mail->Subject = 'Reset Password';

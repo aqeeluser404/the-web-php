@@ -105,15 +105,15 @@ class CallLogService {
                     'user' => (string)$doc['user'],
                 ];
 
-                // $callLog['vendorInfo'] = isset($doc['vendorInfo']) ? [
-                //     'vendorContact' => $doc['vendorInfo']['vendorContact'] ?? null,
-                //     'vendorAssignedDate' => $this->safeDateFormat($doc['vendorInfo']['vendorAssignedDate'] ?? null),
-                // ] : null;
-
                 $callLog['vendorInfo'] = isset($doc['vendorInfo']) ? [
                     'vendorType' => $doc['vendorInfo']['vendorType'] ?? null,
                     'vendorContact' => $doc['vendorInfo']['vendorContact'] ?? null,
                     'vendorAssignedDate' => $this->safeDateFormat($doc['vendorInfo']['vendorAssignedDate'] ?? null)
+                ] : null;
+
+                $callLog['vendorNotes'] = isset($doc['vendorNotes']) ? [
+                    'notes' => $doc['vendorNotes']['notes'] ?? null,
+                    'resolution' => $doc['vendorNotes']['resolution'] ?? null,
                 ] : null;
 
                 $results[] = $callLog;
@@ -146,6 +146,11 @@ class CallLogService {
                     'vendorType' => $doc['vendorInfo']['vendorType'] ?? null,
                     'vendorContact' => $doc['vendorInfo']['vendorContact'] ?? null,
                     'vendorAssignedDate' => $this->safeDateFormat($doc['vendorInfo']['vendorAssignedDate'] ?? null)
+                ] : null;
+                
+                $callLog['vendorNotes'] = isset($doc['vendorNotes']) ? [
+                    'notes' => $doc['vendorNotes']['notes'] ?? null,
+                    'resolution' => $doc['vendorNotes']['resolution'] ?? null,
                 ] : null;
 
                 $results[] = $callLog;
