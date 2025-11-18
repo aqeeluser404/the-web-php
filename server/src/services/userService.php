@@ -47,6 +47,35 @@ class UserService
         return null;
     }
 
+    protected function calculateAge($dobUTC)
+    {
+        if (!$dobUTC)
+            return null;
+
+        $dob = $dobUTC instanceof MongoDB\BSON\UTCDateTime
+            ? $dobUTC->toDateTime()
+            : new DateTime($dobUTC);
+
+        $today = new DateTime();
+        return $today->diff($dob)->y; // returns full years
+    }
+
+    protected function calculateAndSaveAge($userId)
+    {
+        $user = $this->userCollection->findOne(['_id' => new ObjectId($userId)]);
+        if (!$user) return null;
+
+        $age = isset($user['dateOfBirth']) ? $this->calculateAge($user['dateOfBirth']) : null;
+        
+        // Update the age in database
+        $this->userCollection->updateOne(
+            ['_id' => new ObjectId($userId)],
+            ['$set' => ['age' => $age]]
+        );
+        
+        return $age;
+    }
+
     public function userRegisterService($userDetails)
     {
         try {
@@ -63,7 +92,8 @@ class UserService
                 if ($exists['email'] === $userDetails['email'])
                     $conflict[] = 'email';
                 throw new Exception(implode(' and ', $conflict) . ' already exists');
-            };
+            }
+            ;
 
             $userType = ($_ENV['CREATE_ADMIN'] === 'true') ? 'admin' : 'user';
             $hashedPassword = password_hash($userDetails['password'], PASSWORD_BCRYPT);
@@ -210,38 +240,47 @@ class UserService
         }
     }
 
-    public function findUserByIdService($id)
-    {
-        try {
-            $user = $this->userCollection->findOne(['_id' => new ObjectId($id)]);
-            if (!$user) {
-                throw new Exception('User not found');
-            }
-            return $user;
-        } catch (Exception $e) {
-            throw $e;
+public function findUserByIdService($id)
+{
+    try {
+        $user = $this->userCollection->findOne(['_id' => new ObjectId($id)]);
+        if (!$user) {
+            throw new Exception('User not found');
         }
-    }
 
-    public function findUserByTokenService(string $token)
-    {
-        try {
-            $decoded = JWT::decode($token, new Key($_ENV['JWT_SECRET'], 'HS256'));
-
-            $user = $this->userCollection->findOne([
-                '_id' => new MongoDB\BSON\ObjectId($decoded->_id)
-            ]);
-
-            if (!$user) {
-                throw new Exception('User not found');
-            }
-
-            return $user;
-        } catch (Exception $e) {
-            error_log("FindUserByTokenService error: " . $e->getMessage());
-            throw $e;
+        // Ensure age is always calculated and saved
+        if (!isset($user['age']) && isset($user['dateOfBirth'])) {
+            $user['age'] = $this->calculateAndSaveAge($id);
         }
+
+        return $user;
+    } catch (Exception $e) {
+        throw $e;
     }
+}
+
+public function findUserByTokenService(string $token)
+{
+    try {
+        $decoded = JWT::decode($token, new Key($_ENV['JWT_SECRET'], 'HS256'));
+        $user = $this->userCollection->findOne(['_id' => new MongoDB\BSON\ObjectId($decoded->_id)]);
+
+        if (!$user) {
+            throw new Exception('User not found');
+        }
+
+        // Ensure age is always calculated and saved
+        if (!isset($user['age']) && isset($user['dateOfBirth'])) {
+            $user['age'] = $this->calculateAndSaveAge($decoded->_id);
+        }
+
+        return $user;
+    } catch (Exception $e) {
+        error_log("FindUserByTokenService error: " . $e->getMessage());
+        throw $e;
+    }
+}
+
 
     public function createUserService($userDetails)
     {
@@ -259,7 +298,8 @@ class UserService
                 if ($exists['email'] === $userDetails['email'])
                     $conflict[] = 'email';
                 throw new Exception(implode(' and ', $conflict) . ' already exists');
-            };
+            }
+            ;
 
             $hashedPassword = password_hash($userDetails['password'], PASSWORD_BCRYPT);
 
@@ -310,7 +350,9 @@ class UserService
                     'username' => $doc['username'] ?? null,
                     'userType' => $doc['userType'] ?? null,
                     'gender' => $doc['gender'] ?? null,
-                    'dateCreated' => $this->safeDateFormat($doc['dateCreated'] ?? null)
+                    'dateCreated' => $this->safeDateFormat($doc['dateCreated'] ?? null),
+                    'dateOfBirth' => $this->safeDateFormat($doc['dateOfBirth'] ?? null), // new
+                    'age' => $this->calculateAge($doc['dateOfBirth'] ?? null) // new
                 ];
 
                 $user['studentInfo'] = isset($doc['studentInfo']) ? [
@@ -359,11 +401,23 @@ class UserService
         }
     }
 
+
     public function updateUserService($id, $userDetails)
     {
         try {
+            // Handle password hashing if present
             if (isset($userDetails['password'])) {
                 $userDetails['password'] = password_hash($userDetails['password'], PASSWORD_BCRYPT);
+            }
+
+            // Handle dateOfBirth conversion
+            if (isset($userDetails['dateOfBirth']) && !empty($userDetails['dateOfBirth'])) {
+                $timestamp = strtotime($userDetails['dateOfBirth']);
+                if ($timestamp !== false) {
+                    $userDetails['dateOfBirth'] = new UTCDateTime($timestamp * 1000);
+                } else {
+                    unset($userDetails['dateOfBirth']);
+                }
             }
 
             $currentUser = $this->userCollection->findOne(['_id' => new ObjectId($id)]);
@@ -371,14 +425,16 @@ class UserService
                 throw new Exception('User not found');
             }
 
+            // Check if email is being updated
             $isEmailUpdated = isset($userDetails['email']) && $userDetails['email'] !== $currentUser['email'];
 
+            // Update user details
             $this->userCollection->updateOne(
                 ['_id' => new ObjectId($id)],
                 ['$set' => $userDetails]
             );
 
-            // CREATE EMAIL VERIFICATION TOKEN IF EMAIL IS UPDATED
+            // Handle email verification if email was updated
             if ($isEmailUpdated) {
                 $verificationToken = JWT::encode(['userId' => (string) $currentUser['_id']], $_ENV['JWT_SECRET'], 'HS256');
                 $this->userCollection->updateOne(
@@ -392,6 +448,13 @@ class UserService
                     ]
                 );
             }
+
+            // Recalculate and save age if dateOfBirth was updated
+            if (isset($userDetails['dateOfBirth'])) {
+                $this->calculateAndSaveAge($id);
+            }
+
+            // Return the fully updated user
             return $this->userCollection->findOne(['_id' => new ObjectId($id)]);
         } catch (Exception $e) {
             throw $e;
@@ -455,7 +518,16 @@ class UserService
                 $uploadedDocuments = [];
                 foreach ($userDocs as $file) {
                     // $uploadedDocuments[] = $this->ImageKitService->uploadDocument($file);
-                    $uploadedDocuments[] = $this->localFileHelper->uploadDocument($file);
+                    // $uploadedDocuments[] = $this->localFileHelper->uploadDocument($file);
+
+                    // Upload the file via helper
+                    $uploadResult = $this->localFileHelper->uploadDocument($file);
+
+                    // Merge in docType from UploadedFile (media type, e.g. application/pdf)
+                    $uploadedDocuments[] = array_merge(
+                        $uploadResult,
+                        ['docType' => $_POST['type'] ?? null]
+                    );
                 }
 
                 $updateResult = $this->userCollection->updateOne(
@@ -463,11 +535,19 @@ class UserService
                     [
                         '$push' => [
                             'documents' => [
-                                '$each' => array_map(function ($doc) {
+                                // '$each' => array_map(function ($doc) {
+                                //     return [
+                                //         'documentUrl' => $doc['documentUrl'],
+                                //         'fileId' => $doc['fileId'],
+                                //         'uploadDate' => new MongoDB\BSON\UTCDateTime()
+                                //     ];
+                                // }, $uploadedDocuments)
+                                '$each' => array_map(function ($doc) use ($userDocs) {
                                     return [
                                         'documentUrl' => $doc['documentUrl'],
-                                        'fileId' => $doc['fileId'],
-                                        'uploadDate' => new MongoDB\BSON\UTCDateTime()
+                                        'fileId'      => $doc['fileId'],
+                                        'uploadDate'  => new MongoDB\BSON\UTCDateTime(),
+                                        'docType'     => $doc['docType'] ?? null,
                                     ];
                                 }, $uploadedDocuments)
                             ]

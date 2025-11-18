@@ -153,5 +153,8 @@ $emailRoutes($app);
 $exportRoutes = require_once __DIR__ . '/routes/exportRoutes.php';
 $exportRoutes($app);
 
+$incidentRoutes = require_once __DIR__ . '/routes/incidentRoutes.php';
+$incidentRoutes($app);
+
 $app->addErrorMiddleware(true, true, true);
 $app->run();

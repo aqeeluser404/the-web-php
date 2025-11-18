@@ -20,6 +20,14 @@ return function (App $app) {
 
     $app->post('/api/approved-rental', [SendEmailCOntroller::class, 'rentalNotifcationController']);
 
+    $app->post('/api/create-rental-application', [SendEmailCOntroller::class, 'rentalApplicationEmailController']);
+
+    $app->post('/api/create-rental-to-user-application', [SendEmailCOntroller::class, 'rentalApplicationToUserEmailController']);
+
+    $app->post('/api/document-upload-to-user-email', [SendEmailCOntroller::class, 'documentUploadToUserEmailController']);
+
+    $app->post('/api/document-upload-email', [SendEmailCOntroller::class, 'documentUploadEmailController']);
+
     // NEW FUNCTION - ADD TO EXPRESS
     $app->post('/api/rental-action-reminder', [SendEmailCOntroller::class, 'sendRentalActionReminderController']);
 

@@ -13,6 +13,243 @@ class ExportController {
         $this->db = Database::getDb();
     }
 
+    public function exportCalllogsCollection($request, $response): Response
+    {
+        try {
+            $spreadsheet = new Spreadsheet();
+            $spreadsheet->removeSheetByIndex(0); // Remove default sheet
+
+            $collection = $this->db->selectCollection('calllogs');
+            $data = $collection->find()->toArray();
+
+            if (empty($data)) {
+                throw new \Exception("No calllogs found in database");
+            }
+
+            $sheet = $spreadsheet->createSheet();
+            $spreadsheet->setActiveSheetIndex($spreadsheet->getIndex($sheet));
+            $sheet->setTitle('Calllogs');
+
+            // Extract headers from first document
+            $firstDoc = (array)$data[0];
+            $headers = array_keys($firstDoc);
+            $sheet->fromArray($headers, null, 'A1');
+
+            // Fill rows
+            $rowIndex = 2;
+            foreach ($data as $document) {
+                $rowData = [];
+                foreach ($headers as $header) {
+                    $value = $this->convertMongoValue($document[$header] ?? null);
+                    $rowData[] = $value;
+                }
+                $sheet->fromArray($rowData, null, "A{$rowIndex}");
+                $rowIndex++;
+            }
+
+            // Stream to browser
+            $tempFile = tempnam(sys_get_temp_dir(), 'calllogs_export_');
+            $writer = new Xlsx($spreadsheet);
+            $writer->save($tempFile);
+
+            $response = $response->withHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                                ->withHeader('Content-Disposition', 'attachment; filename="calllogs_export_'.date('Y-m-d').'.xlsx"')
+                                ->withHeader('Content-Length', filesize($tempFile));
+
+            $response->getBody()->write(file_get_contents($tempFile));
+            unlink($tempFile);
+
+            return $response;
+
+        } catch (\Exception $e) {
+            error_log("Export failed: " . $e->getMessage());
+            $response->getBody()->write(json_encode([
+                'error' => 'Export failed',
+                'message' => $e->getMessage()
+            ]));
+            return $response->withStatus(500)
+                            ->withHeader('Content-Type', 'application/json');
+        }
+    }
+
+    public function exportUserCollection($request, $response): Response
+    {
+        try {
+            $spreadsheet = new Spreadsheet();
+            $spreadsheet->removeSheetByIndex(0); // Remove default sheet
+
+            $collection = $this->db->selectCollection('User');
+            $data = $collection->find()->toArray();
+
+            if (empty($data)) {
+                throw new \Exception("No users found in database");
+            }
+
+            $sheet = $spreadsheet->createSheet();
+            $spreadsheet->setActiveSheetIndex($spreadsheet->getIndex($sheet));
+            $sheet->setTitle('Users');
+
+            // Extract headers from first document
+            $firstDoc = (array)$data[0];
+            $headers = array_keys($firstDoc);
+            $sheet->fromArray($headers, null, 'A1');
+
+            // Fill rows
+            $rowIndex = 2;
+            foreach ($data as $document) {
+                $rowData = [];
+                foreach ($headers as $header) {
+                    $value = $this->convertMongoValue($document[$header] ?? null);
+                    $rowData[] = $value;
+                }
+                $sheet->fromArray($rowData, null, "A{$rowIndex}");
+                $rowIndex++;
+            }
+
+            // Stream to browser
+            $tempFile = tempnam(sys_get_temp_dir(), 'users_export_');
+            $writer = new Xlsx($spreadsheet);
+            $writer->save($tempFile);
+
+            $response = $response->withHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                                ->withHeader('Content-Disposition', 'attachment; filename="users_export_'.date('Y-m-d').'.xlsx"')
+                                ->withHeader('Content-Length', filesize($tempFile));
+
+            $response->getBody()->write(file_get_contents($tempFile));
+            unlink($tempFile);
+
+            return $response;
+
+        } catch (\Exception $e) {
+            error_log("Export failed: " . $e->getMessage());
+            $response->getBody()->write(json_encode([
+                'error' => 'Export failed',
+                'message' => $e->getMessage()
+            ]));
+            return $response->withStatus(500)
+                            ->withHeader('Content-Type', 'application/json');
+        }
+    }
+
+    public function exportUnitCollection($request, $response): Response
+    {
+        try {
+            $spreadsheet = new Spreadsheet();
+            $spreadsheet->removeSheetByIndex(0); // Remove default sheet
+
+            $collection = $this->db->selectCollection('Unit');
+            $data = $collection->find()->toArray();
+
+            if (empty($data)) {
+                throw new \Exception("No units found in database");
+            }
+
+            $sheet = $spreadsheet->createSheet();
+            $spreadsheet->setActiveSheetIndex($spreadsheet->getIndex($sheet));
+            $sheet->setTitle('Units');
+
+            // Extract headers from first document
+            $firstDoc = (array)$data[0];
+            $headers = array_keys($firstDoc);
+            $sheet->fromArray($headers, null, 'A1');
+
+            // Fill rows
+            $rowIndex = 2;
+            foreach ($data as $document) {
+                $rowData = [];
+                foreach ($headers as $header) {
+                    $value = $this->convertMongoValue($document[$header] ?? null);
+                    $rowData[] = $value;
+                }
+                $sheet->fromArray($rowData, null, "A{$rowIndex}");
+                $rowIndex++;
+            }
+
+            // Stream to browser
+            $tempFile = tempnam(sys_get_temp_dir(), 'units_export_');
+            $writer = new Xlsx($spreadsheet);
+            $writer->save($tempFile);
+
+            $response = $response->withHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                                ->withHeader('Content-Disposition', 'attachment; filename="units_export_'.date('Y-m-d').'.xlsx"')
+                                ->withHeader('Content-Length', filesize($tempFile));
+
+            $response->getBody()->write(file_get_contents($tempFile));
+            unlink($tempFile);
+
+            return $response;
+
+        } catch (\Exception $e) {
+            error_log("Export failed: " . $e->getMessage());
+            $response->getBody()->write(json_encode([
+                'error' => 'Export failed',
+                'message' => $e->getMessage()
+            ]));
+            return $response->withStatus(500)
+                            ->withHeader('Content-Type', 'application/json');
+        }
+    }
+
+    public function exportRentalCollection($request, $response): Response
+    {
+        try {
+            $spreadsheet = new Spreadsheet();
+            $spreadsheet->removeSheetByIndex(0); // Remove default sheet
+
+            $collection = $this->db->selectCollection('Rental');
+            $data = $collection->find()->toArray();
+
+            if (empty($data)) {
+                throw new \Exception("No rentals found in database");
+            }
+
+            // Create and activate new sheet
+            $sheet = $spreadsheet->createSheet();
+            $spreadsheet->setActiveSheetIndex($spreadsheet->getIndex($sheet));
+            $sheet->setTitle('Rentals');
+
+            // Extract headers from first document
+            $firstDoc = (array)$data[0];
+            $headers = array_keys($firstDoc);
+            $sheet->fromArray($headers, null, 'A1');
+
+            // Fill rows
+            $rowIndex = 2;
+            foreach ($data as $document) {
+                $rowData = [];
+                foreach ($headers as $header) {
+                    $value = $this->convertMongoValue($document[$header] ?? null);
+                    $rowData[] = $value;
+                }
+                $sheet->fromArray($rowData, null, "A{$rowIndex}");
+                $rowIndex++;
+            }
+
+            // Stream to browser
+            $tempFile = tempnam(sys_get_temp_dir(), 'rentals_export_');
+            $writer = new Xlsx($spreadsheet);
+            $writer->save($tempFile);
+
+            $response = $response->withHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                                ->withHeader('Content-Disposition', 'attachment; filename="rentals_export_'.date('Y-m-d').'.xlsx"')
+                                ->withHeader('Content-Length', filesize($tempFile));
+
+            $response->getBody()->write(file_get_contents($tempFile));
+            unlink($tempFile);
+
+            return $response;
+
+        } catch (\Exception $e) {
+            error_log("Export failed: " . $e->getMessage());
+            $response->getBody()->write(json_encode([
+                'error' => 'Export failed',
+                'message' => $e->getMessage()
+            ]));
+            return $response->withStatus(500)
+                            ->withHeader('Content-Type', 'application/json');
+        }
+    }
+
     public function exportAllCollections($request, $response): Response
     {
         try {

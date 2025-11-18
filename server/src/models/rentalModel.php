@@ -33,6 +33,11 @@ class Rental {
     /** @var string */
     public $unitType;
 
+    /** 
+     * @var array|null The selected sub-unit(s) for this rental, with type and price 
+     */
+    public $selectedSubUnits = null;
+
     /** @var ObjectId */
     public $user;
 
@@ -42,18 +47,27 @@ class Rental {
     /** @var array{selected: bool, fee: float} */
     public $parking;
 
+    /** @var array{imageUrl: string, fileId: string, _id: ObjectId}|null */
+    public $guardianSignature;
+
+     /** @var array{imageUrl: string, fileId: string, _id: ObjectId}|null */
+    public $signature;
+
     public function __construct(
         float $rentalPrice,
         string $unit,
         string $unitType,
         string $user,
+        ?array $selectedSubUnits = null,
         string $status = 'Pending',
         ?string $accessKey = null,
         ?string $rentalStartDate = null,
         ?string $rentalEndDate = null,
         ?string $earlyEndDate = null,
         array $payerData = [],
-        ?array $parking = null
+        ?array $parking = null,
+        ?array $signature = null,
+        ?array $guardianSignature = null
     ) {
         $this->applicationDate = new UTCDateTime();
         $this->status = in_array($status, ['Pending', 'Rejected', 'Active', 'Ended']) ? $status : 'Pending';
@@ -63,6 +77,7 @@ class Rental {
         $this->rentalPrice = $rentalPrice;
         $this->unit = new ObjectId($unit);
         $this->unitType = $unitType;
+        $this->selectedSubUnits = $selectedSubUnits;
         $this->user = new ObjectId($user);
         $this->accessKey = $accessKey;
 
@@ -83,6 +98,24 @@ class Rental {
             'hasParking' => false,
             'fee' => 50.0 // Placeholder fee
         ], $parking ?? []);
+
+        // $this->signature = array_merge([
+        //     'imageUrl' => $image['imageUrl'] ?? '',
+        //     'fileId' => $image['fileId'] ?? '',
+        //     '_id' => $image['_id'] ?? new ObjectId()
+        // ], $signature)
+
+        $this->signature = $signature ? [
+            'imageUrl' => $signature['imageUrl'] ?? '',
+            'fileId' => $signature['fileId'] ?? '',
+            '_id' => $signature['_id'] ?? new ObjectId()
+        ] : null;
+
+        $this->guardianSignature = $guardianSignature ? [
+            'imageUrl' => $guardianSignature['imageUrl'] ?? '',
+            'fileId' => $guardianSignature['fileId'] ?? '',
+            '_id' => $guardianSignature['_id'] ?? new ObjectId()
+        ] : null;
     }
 
     public function toArray(): array {
@@ -96,9 +129,12 @@ class Rental {
             'payerData' => $this->payerData,
             'unit' => $this->unit,
             'unitType' => $this->unitType,
+            'selectedSubUnits' => $this->selectedSubUnits,
             'user' => $this->user,
             'accessKey' => $this->accessKey,
-            'parking' => $this->parking
+            'parking' => $this->parking,
+            'signature' => $this->signature,
+            'guardianSignature' => $this->guardianSignature
         ];
     }
 }

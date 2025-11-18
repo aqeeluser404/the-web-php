@@ -34,4 +34,11 @@ return function (App $app) {
     $app->delete('/api/admin/units/{id}', [UnitController::class, 'deleteUnitController']) // DELETE DELETE->UNIT
     ->add(new AdminAuthorizationMiddleware())
     ->add(new AuthenticationMiddleware());
+
+    // reserve
+    $app->post('/api/units/reserve', [UnitController::class, 'reserveUnitController']);
+    $app->post('/api/units/cancel-reservation', [UnitController::class, 'cancelReservationController']);
+    $app->post('/api/units/rooms/reserve', [UnitController::class, 'reserveRoomController']);
+    $app->post('/api/units/rooms/cancel-reservation', [UnitController::class, 'cancelReserveRoomController']);
+
 };

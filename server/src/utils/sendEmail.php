@@ -23,7 +23,7 @@ class EmailService {
         $mail = $this->transporter;
 
         $verificationLink = $_ENV['HOST_LINK_0'] . '/verify-email?token=' . $user['verification']['verificationToken'];
-        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The Web');
+        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
         $mail->addAddress($user['email']);
         $mail->Subject = 'Verify Email';
         $mail->Body = "
@@ -39,7 +39,7 @@ class EmailService {
             </p>
             <p>
                 Best regards,<br>
-                The Web Team
+                The-WEB Team
             </p>
         ";
 
@@ -55,7 +55,7 @@ class EmailService {
         $mail = $this->transporter;
 
         $resetLink = $_ENV['HOST_LINK_0'] . '/reset-password?token=' . $token;
-        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The Web');
+        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
         $mail->addAddress($user['email']);
         $mail->Subject = 'Reset Password';
         $mail->Body = "
@@ -71,7 +71,7 @@ class EmailService {
             </p>
             <p>
                 Best regards,<br>
-                The Web Team
+                The-WEB Team
             </p>
         ";
 
@@ -82,13 +82,16 @@ class EmailService {
             echo 'Mailer Error: ' . $mail->ErrorInfo;
         }
     }
-    
+
     public function getInContactEmail($userContact, $message) {
-        $sourceEmail = $_ENV['BUSINESS_EMAIL_ADDRESS']; // Verified sender email in SES
-        $recipientEmail = $_ENV['BUSINESS_EMAIL_ADDRESS']; // Receiver email
-        $subject = "Contact Form Submission from {$userContact['firstName']}";
-        $htmlBody = "
-            <p>Dear The Web Team,</p>
+        $mail = $this->transporter;
+
+        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
+        $mail->addAddress($_ENV['BUSINESS_EMAIL_ADDRESS']);  // your preferred business receiving email
+
+        $mail->Subject = "Contact Form Submission from {$userContact['firstName']}";
+        $mail->Body = "
+            <p>Dear The-WEB Team,</p>
             <p>You have received a new message from your contact form.</p>
             <p>
                 <strong>Email received from:</strong> {$userContact['firstName']}<br>
@@ -101,43 +104,133 @@ class EmailService {
             </p>
         ";
 
-        $response = $this->bypassTransporter->sendEmail($sourceEmail, $recipientEmail, $subject, $htmlBody);
-
-        if ($response['status'] === 'success') {
-            echo "Email sent successfully! Message ID: " . $response['messageId'];
-        } else {
-            echo "Error sending email: " . $response['message'];
+        try {
+            $mail->send();
+            echo "Email sent successfully!";
+        } catch (Exception $e) {
+            echo "Mailer Error: " . $mail->ErrorInfo;
         }
     }
 
-    // public function getInContactEmail($userContact, $message) {
-    //     $mail = $this->bypassTransporter;
+    public function rentalApplicationEmail($user) {
+        $mail = $this->transporter;
 
-    //     $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The Web');
-    //     $mail->addAddress($_ENV['BUSINESS_EMAIL_ADDRESS']);
-    //     $mail->Subject = "Contact Form Submission from {$userContact['firstName']} ";
-    //     $mail->Body = "
-    //         <p>Dear The Web Team,</p>
-    //         <p>You have received a new message from your contact form.</p>
-    //         <p>
-    //             <strong>Email received from: </strong>{$userContact['firstName']}<br>
-    //             Message: \"{$message}\"<br>
-    //             Email: {$userContact['email']}
-    //         </p>
-    //         <p>
-    //             Best regards,<br>
-    //             The Web Team
-    //         </p>
-    //     ";
+        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
+        $mail->addAddress($_ENV['BUSINESS_EMAIL_ADDRESS']); 
 
-    //     try {
-    //         $mail->send();
-    //         echo 'Email sent successfully!';
-    //     } catch (Exception $e) {
-    //         echo 'Mailer Error: ' . $mail->ErrorInfo;
-    //     }
-    // }
+        $mail->Subject = "Application created by {$user['firstName']}";
+        $mail->Body = "
+            <p>Dear The-WEB Team,</p>
+            <p>You have received a new application from The-WEB.</p>
+            <p>
+                <strong>First Name:</strong> {$user['firstName']}<br>
+                <strong>Last Name:</strong> {$user['lastName']}<br>
+                <strong>Username:</strong> {$user['username']}
+            </p>
+            <p>
+                Best regards,<br>
+                The-WEB Team
+            </p>
+        ";
 
+        try {
+            $mail->send();
+            echo "Email sent successfully!";
+        } catch (Exception $e) {
+            echo "Mailer Error: " . $mail->ErrorInfo;
+        }
+    }
+
+    public function rentalApplicationToUserEmail($user) {
+        $mail = $this->transporter;
+
+        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
+        $mail->addAddress($user['email']);
+        $mail->Subject = 'Rental Application Created';
+        $mail->Body = "
+            <p>Dear {$user['firstName']},</p>
+            <p>Your rental application at The-WEB has been created.</p>
+            <p>
+                We're excited to let you know that your rental application has been successfully submitted to The-WEB.<br>  
+                Our team will review your details and get in touch with you shortly regarding the next steps.<br> 
+                We appreciate your interest and look forward to helping you find the perfect rental solution.
+            </p>
+            <p>
+                For enquiries you can email us at <a href=\"mailto:" . $_ENV['BUSINESS_EMAIL_ADDRESS'] . "\">" . $_ENV['BUSINESS_EMAIL_ADDRESS'] . "</a>
+            </p>
+            <p>
+                Best regards,<br>
+                The-WEB Team
+            </p>
+        ";
+
+        try {
+            $mail->send();
+            echo 'Email sent successfully!';
+        } catch (Exception $e) {
+            echo 'Mailer Error: ' . $mail->ErrorInfo;
+        }
+    }
+
+    public function documentUploadToUserEmail($user) {
+        $mail = $this->transporter;
+
+        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
+        $mail->addAddress($user['email']);
+
+        $mail->Subject = "Your documents have been successfully uploaded";
+        $mail->Body = "
+            <p>Dear {$user['firstName']},</p>
+            <p>
+                Thank you for submitting your documents.<br>
+                Our team will review them shortly as part of your rental application process.<br>
+                If any additional information is required, we’ll reach out to you directly.<br>
+                We appreciate your prompt response and look forward to assisting you further.
+            </p>
+            <p>
+                For enquiries you can email us at <a href=\"mailto:" . $_ENV['BUSINESS_EMAIL_ADDRESS'] . "\">" . $_ENV['BUSINESS_EMAIL_ADDRESS'] . "</a>
+            </p>
+            <p>
+                Best regards,<br>
+                The-WEB Team
+            </p>
+        ";
+
+        try {
+            $mail->send();
+            echo "Email sent successfully!";
+        } catch (Exception $e) {
+            echo "Mailer Error: " . $mail->ErrorInfo;
+        }
+    }
+
+    public function documentUploadEmail($user) {
+        $mail = $this->transporter;
+
+        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
+        $mail->addAddress($_ENV['BUSINESS_EMAIL_ADDRESS']); 
+
+        $mail->Subject = "Documents uploaded by {$user['firstName']}";
+        $mail->Body = "
+            <p>Dear The-WEB Team,</p>
+            <p>A user has uploaded documents. Please log in to view them.</p>
+            <p>
+                <strong>Full Name:</strong> {$user['firstName']}<br>
+                <strong>Username:</strong> {$user['username']}<br>
+            </p>
+            <p>
+                Best regards,<br>
+                The-WEB Team
+            </p>
+        ";
+
+        try {
+            $mail->send();
+            echo "Email sent successfully!";
+        } catch (Exception $e) {
+            echo "Mailer Error: " . $mail->ErrorInfo;
+        }
+    }
 
     public function rentalNotificationEmail($user, $unit, $rental) {
         $mail = $this->transporter;
@@ -147,7 +240,7 @@ class EmailService {
             ? date('d M Y', strtotime($rental['rentalStartDate'])) 
             : '[Start Date Not Specified]';
 
-        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The Web');
+        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
         $mail->addAddress($user['email']);
         $mail->Subject = 'Rental Application Approved';
         $mail->Body = "
@@ -167,7 +260,7 @@ class EmailService {
             </p>
             <p>
                 Best regards,<br>
-                The Web Team
+                The-WEB Team
             </p>
         ";
 
@@ -183,7 +276,7 @@ class EmailService {
     public function sendRentalActionReminderEmail($user, $message) {
         $mail = $this->transporter;
 
-        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The Web');
+        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
         $mail->addAddress($user['email']);
         $mail->Subject = 'Action Required: Rental Application Update';
         $mail->Body = "
@@ -197,7 +290,7 @@ class EmailService {
             </p>
             <p>
                 Best regards,<br>
-                The Web Team
+                The-WEB Team
             </p>
         ";
 
@@ -212,7 +305,7 @@ class EmailService {
     public function sendRentalRejectionEmail($user, $message) {
         $mail = $this->transporter;
 
-        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The Web');
+        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
         $mail->addAddress($user['email']);
         $mail->Subject = 'Rental Application Rejected';
         $mail->Body = "
@@ -225,7 +318,7 @@ class EmailService {
             </p>
             <p>
                 Best regards,<br>
-                The Web Team
+                The-WEB Team
             </p>
         ";
 
@@ -253,7 +346,7 @@ class EmailService {
         // Format the date into "31 Jan 2025"
         $formattedDate = $date ? date('d M Y', strtotime($date)) : 'Invalid date';
     
-        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The Web');
+        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
         $mail->addAddress($user['email']);
         $mail->Subject = 'Rental Application Extended';
         $mail->Body = "
@@ -268,7 +361,7 @@ class EmailService {
             </p>
             <p>
                 Best regards,<br>
-                The Web Team
+                The-WEB Team
             </p>
         ";
     
@@ -289,7 +382,7 @@ class EmailService {
             ? date('d M Y', strtotime($callLog['createdAt'])) 
             : '[Start Date Not Specified]';
 
-        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The Web');
+        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
         $mail->addAddress($callLog['vendorInfo']['vendorContact']);
         $mail->Subject = "Log Number {$callLog['logNumber']} | Request from {$user['firstName']}";
 
@@ -310,7 +403,7 @@ class EmailService {
             </p>
             <p>
                 Best regards,<br>
-                The Web Team
+                The-WEB Team
             </p>
         ";
 
@@ -321,5 +414,4 @@ class EmailService {
             echo 'Mailer Error: ' . $mail->ErrorInfo;
         }
     }
-    
 }

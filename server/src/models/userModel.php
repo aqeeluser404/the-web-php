@@ -14,6 +14,8 @@ class User {
     public $userType;
     public $dateCreated;
     public $gender;
+    public $age;
+    public $dateOfBirth;
     public $studentInfo;
     public $verification;
     public $forgotPassword;
@@ -31,6 +33,8 @@ class User {
         $password,
         $userType,
         $gender = null,
+        $age = null,
+        $dateOfBirth = null, 
         $studentInfo = [],
         $verification = [],
         $forgotPassword = [],
@@ -47,6 +51,8 @@ class User {
         $this->password = $password;
         $this->userType = $userType;
         $this->gender = $gender;
+        $this->age = $age; 
+        $this->dateOfBirth = $dateOfBirth;
         $this->dateCreated = new UTCDateTime();
 
         // Nested Fields ----------------------------------------------------------------
@@ -89,7 +95,8 @@ class User {
             return array_merge([
                 'documentUrl' => null,
                 'fileId' => null,
-                'uploadDate' => new UTCDateTime()
+                'uploadDate' => new UTCDateTime(),
+                'docType'     => null, 
             ], $doc);
         }, $documents);
     }

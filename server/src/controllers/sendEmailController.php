@@ -237,6 +237,80 @@ class SendEmailCOntroller {
         }
     }
 
+    public function rentalApplicationEmailController($req, $res) {
+        try {
+            $body = $req->getParsedBody();
+            $userId = $body['userId'] ?? null;
+
+            $user = $this->userCollection->findOne(['_id' => new ObjectId($userId)]);
+            if (!$user) {
+                return $this->respond($res, ['error' => 'User not found.'], 400);
+            }
+            $this->emailService->rentalApplicationEmail( $user);
+            return $this->respond($res, ['message' => 'Message sent successfully.'], 200);
+        } catch (Exception $e) {
+            return $this->respond($res, [
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function rentalApplicationToUserEmailController($req, $res) {
+        try {
+            $body = $req->getParsedBody();
+            $userId = $body['userId'] ?? null;
+
+            $user = $this->userCollection->findOne(['_id' => new ObjectId($userId)]);
+            if (!$user) {
+                return $this->respond($res, ['error' => 'User not found.'], 400);
+            }
+            $this->emailService->rentalApplicationToUserEmail( $user);
+            return $this->respond($res, ['message' => 'Message sent successfully.'], 200);
+        } catch (Exception $e) {
+            return $this->respond($res, [
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function documentUploadToUserEmailController($req, $res) {
+        try {
+            $body = $req->getParsedBody();
+            $userId = $body['userId'] ?? null;
+
+            $user = $this->userCollection->findOne(['_id' => new ObjectId($userId)]);
+            if (!$user) {
+                return $this->respond($res, ['error' => 'User not found.'], 400);
+            }
+
+            $this->emailService->documentUploadToUserEmail( $user);
+            return $this->respond($res, ['message' => 'Message sent successfully.'], 200);
+        } catch (Exception $e) {
+            return $this->respond($res, [
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function documentUploadEmailController($req, $res) {
+        try {
+            $body = $req->getParsedBody();
+            $userId = $body['userId'] ?? null;
+
+            $user = $this->userCollection->findOne(['_id' => new ObjectId($userId)]);
+            if (!$user) {
+                return $this->respond($res, ['error' => 'User not found.'], 400);
+            }
+
+            $this->emailService->documentUploadEmail( $user);
+            return $this->respond($res, ['message' => 'Message sent successfully.'], 200);
+        } catch (Exception $e) {
+            return $this->respond($res, [
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function rentalNotifcationController($req, $res) {
         try {
             $body = $req->getParsedBody();

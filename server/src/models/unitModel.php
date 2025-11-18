@@ -1,116 +1,69 @@
 <?php
-// require_once __DIR__ . '/../../../vendor/autoload.php';
-
-// use MongoDB\BSON\ObjectId;
-// use MongoDB\BSON\UTCDateTime;
-
-// class Unit {
-//     public $unitNumber;
-//     public $floorLevel;
-//     public $unitType;
-//     public $unitOccupants;
-//     public $currentOccupants;
-//     public $unitDescription;
-//     public $unitPrice;
-//     public $unitStatus;
-//     public $images;
-//     public $dateCreated;
-//     public $rentedHistory;
-//     public $genderAssignment;
-//     public $accessKey;
-
-//     public function __construct(
-//         $unitNumber,                 
-//         $floorLevel,                  
-//         $unitType,                      
-//         $unitOccupants,                 
-//         $unitDescription,            
-//         $unitPrice,                     
-//         $unitStatus,                  
-//         $dateCreated,
-//         $currentOccupants = 0, 
-//         $images = [],
-//         $rentedHistory = [],
-//         $genderAssignment = null,
-//         $accessKey = ['isShared' => false, 'assignedKey' => null]
-//     ) {
-//         $this->unitNumber = $unitNumber;
-//         $this->floorLevel = $floorLevel;
-//         $this->unitType = $unitType;
-//         $this->unitOccupants = $unitOccupants;
-//         $this->currentOccupants = $currentOccupants;
-//         $this->unitDescription = $unitDescription;
-//         $this->unitPrice = $unitPrice;
-//         $this->unitStatus = $unitStatus;  
-
-//         $this->images = array_map(function($image) {
-//             return array_merge([
-//                 'imageUrl' => null,
-//                 'fileId' => null,
-//                 '_id' => isset($image['_id']) ? $image['_id'] : new ObjectId()
-//             ], $image);
-//         }, $images);
-
-//         $this->dateCreated = new UTCDateTime();
-
-//         $this->rentedHistory = array_map(
-//             function($id) { return new ObjectId($id); },
-//             $rentedHistory
-//         );
-
-//         $this->accessKey = $accessKey;
-//         $this->genderAssignment = $genderAssignment;
-//     }
-// }
-
 require_once __DIR__ . '/../../../vendor/autoload.php';
 
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
 
-class Unit {
+class Unit
+{
     // /** @var int */
     /** @var string */
     public $unitNumber;
-    
+
     /** @var string */
     public $floorLevel;
-    
+
     /** @var string */
     public $unitType;
-    
+
     /** @var int */
     public $unitOccupants;
-    
+
     /** @var int */
     public $currentOccupants;
-    
+
     /** @var string */
     public $unitDescription;
-    
+
     /** @var float */
     public $unitPrice;
-    
+
+    /** 
+     * @var array<array{type: string, roomType?: string, bedType?: string, price: float}> 
+     * Optional nested rooms or beds
+     */
+    public $subUnits = [];
+
     /** @var string */
     public $unitStatus;
-    
+
     /** 
      * @var array<array{imageUrl: string, fileId: string, _id: ObjectId}> 
      */
     public $images;
-    
+
     /** @var UTCDateTime */
     public $dateCreated;
-    
+
     /** @var ObjectId[] */
     public $rentedHistory;
-    
+
     /** @var string|null */
     public $genderAssignment;
-    
+
     /** @var array{isShared: bool|null, assignedKey: string|null} */
     public $accessKey;
-    
+
+    /** 
+     * @var ObjectId|null The user who reserved this unit 
+     */
+    public $reservedBy = null;
+
+    /** 
+     * @var UTCDateTime|null When the reservation was made 
+     */
+    public $reservedAt = null;
+
     // /** @var int */
     // public $__v;
 
@@ -122,12 +75,22 @@ class Unit {
         int $unitOccupants,
         string $unitDescription,
         float $unitPrice,
+
+        array $subUnits = [],
+
         string $unitStatus = 'Available',
         ?string $genderAssignment = null,
         int $currentOccupants = 0,
         array $images = [],
         array $rentedHistory = [],
-        array $accessKey = ['isShared' => null, 'assignedKey' => null],
+        array $accessKey = [
+            'isShared' => null,
+            'assignedKey' => null,
+            'createdAt' => null,
+            'expiresAt' => null
+        ],
+        ?ObjectId $reservedBy = null,
+        ?UTCDateTime $reservedAt = null
         // int $__v = 0,
     ) {
         $this->unitNumber = $unitNumber;
@@ -137,11 +100,46 @@ class Unit {
         $this->currentOccupants = $currentOccupants;
         $this->unitDescription = $unitDescription;
         $this->unitPrice = $unitPrice;
+
+        // $this->subUnits = array_map(function($subUnit) {
+        //     return [
+        //         'type' => $subUnit['type'] ?? 'room',
+        //         'roomType' => $subUnit['roomType'] ?? null,
+        //         'bedType' => $subUnit['bedType'] ?? null,
+
+        //         // 'price' => $subUnit['price'] ?? 0,
+        //         'price' => $subUnit['price'] ?? [
+        //             $subUnit['price'] ?? 0
+        //         ],
+
+        //         'discount' => $subUnit['discount'] ?? null,
+        //         'isAvailable' => $subUnit['isAvailable'] ?? true
+        //     ];
+        // }, $subUnits);
+
+        $this->subUnits = array_map(function ($subUnit) {
+            return [
+                'type' => $subUnit['type'] ?? 'room',
+                'roomType' => $subUnit['roomType'] ?? null,
+                'bedType' => $subUnit['bedType'] ?? null,
+                'price' => array_map(function ($priceEntry) {
+                    return [
+                        'name' => $priceEntry['name'] ?? 'default',
+                        'price' => floatval($priceEntry['price'] ?? 0)
+                    ];
+                }, is_array($subUnit['price']) ? $subUnit['price'] : [['price' => $subUnit['price'] ?? 0]]),
+                'discount' => $subUnit['discount'] ?? null,
+                'isAvailable' => $subUnit['isAvailable'] ?? true,
+                'reservedBy' => $subUnit['reservedBy'] ?? null,  // Add reservedBy here
+                'reservedAt' => $subUnit['reservedAt'] ?? null   // Add reservedAt here
+            ];
+        }, $subUnits);
+
         $this->unitStatus = $unitStatus;
         $this->genderAssignment = $genderAssignment;
 
         // Process images array
-        $this->images = array_map(function(array $image): array {
+        $this->images = array_map(function (array $image): array {
             return [
                 'imageUrl' => $image['imageUrl'] ?? '',
                 'fileId' => $image['fileId'] ?? '',
@@ -159,8 +157,13 @@ class Unit {
 
         $this->accessKey = [
             'isShared' => $accessKey['isShared'] ?? null,
-            'assignedKey' => $accessKey['assignedKey'] ?? null
+            'assignedKey' => $accessKey['assignedKey'] ?? null,
+            'createdAt' => $accessKey['createdAt'] ?? null,
+            'expiresAt' => $accessKey['expiresAt'] ?? null
         ];
+
+        $this->reservedBy = $reservedBy;
+        $this->reservedAt = $reservedAt;
 
         // $this->__v = $__v;
     }
@@ -168,7 +171,8 @@ class Unit {
     /**
      * Convert the Unit to a MongoDB document array
      */
-    public function toArray(): array {
+    public function toArray(): array
+    {
         return [
             'unitNumber' => $this->unitNumber,
             'floorLevel' => $this->floorLevel,
@@ -177,6 +181,7 @@ class Unit {
             'currentOccupants' => $this->currentOccupants,
             'unitDescription' => $this->unitDescription,
             'unitPrice' => $this->unitPrice,
+            'subUnits' => $this->subUnits,
             'unitStatus' => $this->unitStatus,
             'images' => $this->images,
             'dateCreated' => $this->dateCreated,
@@ -185,5 +190,15 @@ class Unit {
             'accessKey' => $this->accessKey,
             // '__v' => $this->__v
         ];
+
+        // Only include reservation fields if they exist
+        if ($this->reservedBy !== null) {
+            $data['reservedBy'] = $this->reservedBy;
+        }
+        if ($this->reservedAt !== null) {
+            $data['reservedAt'] = $this->reservedAt;
+        }
+
+        return $data;
     }
 }

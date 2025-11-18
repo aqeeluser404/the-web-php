@@ -26,6 +26,123 @@ class UnitController {
             ->withHeader('Content-Type', 'application/json');
     }
 
+    public function reserveUnitController($req, $res) {
+        try {
+            $data = $req->getParsedBody();
+            $unitId = $data['unitId'] ?? '';
+            $userId = $data['userId'] ?? '';
+
+            if (empty($unitId)) {
+                throw new Exception('Unit ID is required');
+            }
+            if (empty($userId)) {
+                throw new Exception('User ID is required');
+            }
+
+            $result = $this->unitService->reserveUnitService($unitId, $userId);
+            
+            return $this->respond($res, [
+                'message' => 'Unit reserved successfully',
+                'data' => $result
+            ], 200);
+        } catch (Exception $e) {
+            error_log('Reservation error: ' . $e->getMessage());
+            return $this->respond($res, [
+                'error' => $e->getMessage()
+            ], 400);
+        }
+    }
+
+    public function cancelReservationController($req, $res) {
+        try {
+            $data = $req->getParsedBody();
+            $unitId = $data['unitId'] ?? '';
+            $userId = $data['userId'] ?? '';
+
+            if (empty($unitId)) {
+                throw new Exception('Unit ID is required');
+            }
+            if (empty($userId)) {
+                throw new Exception('User ID is required');
+            }
+
+            $result = $this->unitService->cancelReservationService($unitId, $userId);
+            
+            return $this->respond($res, [
+                'message' => 'Reservation cancelled successfully',
+                'data' => $result
+            ], 200);
+        } catch (Exception $e) {
+            error_log('Cancellation error: ' . $e->getMessage());
+            return $this->respond($res, [
+                'error' => $e->getMessage()
+            ], 400);
+        }
+    }
+
+public function reserveRoomController($req, $res) {
+    try {
+        $data = $req->getParsedBody();
+        $unitId = $data['unitId'] ?? '';
+        $roomIndex = $data['roomIndex'] ?? null;  // expecting zero-based index
+        $userId = $data['userId'] ?? '';
+
+        if (empty($unitId)) {
+            throw new Exception('Unit ID is required');
+        }
+        if ($roomIndex === null) {
+            throw new Exception('Room index is required');
+        }
+        if (empty($userId)) {
+            throw new Exception('User ID is required');
+        }
+
+        $result = $this->unitService->reserveRoomService($unitId, $roomIndex, $userId);
+
+        return $this->respond($res, [
+            'message' => 'Room reserved successfully',
+            'data' => $result
+        ], 200);
+    } catch (Exception $e) {
+        error_log('Room reservation error: ' . $e->getMessage());
+        return $this->respond($res, [
+            'error' => $e->getMessage()
+        ], 400);
+    }
+}
+
+public function cancelReserveRoomController($req, $res) {
+    try {
+        $data = $req->getParsedBody();
+        $unitId = $data['unitId'] ?? '';
+        $roomIndex = $data['roomIndex'] ?? null;  // expecting zero-based index
+        $userId = $data['userId'] ?? '';
+
+        if (empty($unitId)) {
+            throw new Exception('Unit ID is required');
+        }
+        if ($roomIndex === null) {
+            throw new Exception('Room index is required');
+        }
+        if (empty($userId)) {
+            throw new Exception('User ID is required');
+        }
+
+        $result = $this->unitService->cancelReserveRoomService($unitId, $roomIndex, $userId);
+
+        return $this->respond($res, [
+            'message' => 'Room reservation cancelled successfully',
+            'data' => $result
+        ], 200);
+    } catch (Exception $e) {
+        error_log('Room reservation cancellation error: ' . $e->getMessage());
+        return $this->respond($res, [
+            'error' => $e->getMessage()
+        ], 400);
+    }
+}
+
+
     public function createUnitController($req, $res) {
         try {
             $userDetails = $req->getParsedBody();

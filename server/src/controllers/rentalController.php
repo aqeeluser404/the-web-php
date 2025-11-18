@@ -9,6 +9,7 @@ use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use Slim\Psr7\UploadedFile;
 
 $dotenv = Dotenv::createImmutable(__DIR__ . '/../../../');
 $dotenv->load();
@@ -33,16 +34,66 @@ class RentalController {
     public function createRentalController($req, $res) {
         try {
             $rentalDetails = $req->getParsedBody();
-    
-            // Call service and get result
-            $result = $this->rentalService->createRentalService($rentalDetails);
-    
+
+            $signatureFiles = [];
+
+            if (!empty($_FILES['signatureImage']['name'][0])) { // array-style (future-proofing)
+                foreach ($_FILES['signatureImage']['name'] as $index => $name) {
+                    if ($_FILES['signatureImage']['error'][$index] === UPLOAD_ERR_OK) {
+                        $signatureFiles[] = new UploadedFile(
+                            $_FILES['signatureImage']['tmp_name'][$index],
+                            $name,
+                            $_FILES['signatureImage']['type'][$index],
+                            $_FILES['signatureImage']['size'][$index],
+                            $_FILES['signatureImage']['error'][$index]
+                        );
+                    }
+                }
+            } elseif (!empty($_FILES['signatureImage']['name'])) { // single file fallback
+                $signatureFiles[] = new UploadedFile(
+                    $_FILES['signatureImage']['tmp_name'],
+                    $_FILES['signatureImage']['name'],
+                    $_FILES['signatureImage']['type'],
+                    $_FILES['signatureImage']['size'],
+                    $_FILES['signatureImage']['error']
+                );
+            }
+
+            $guardianSignatureFiles = [];
+
+            if (!empty($_FILES['guardianSignatureImage']['name'][0])) { // array-style
+                foreach ($_FILES['guardianSignatureImage']['name'] as $index => $name) {
+                    if ($_FILES['guardianSignatureImage']['error'][$index] === UPLOAD_ERR_OK) {
+                        $guardianSignatureFiles[] = new UploadedFile(
+                            $_FILES['guardianSignatureImage']['tmp_name'][$index],
+                            $name,
+                            $_FILES['guardianSignatureImage']['type'][$index],
+                            $_FILES['guardianSignatureImage']['size'][$index],
+                            $_FILES['guardianSignatureImage']['error'][$index]
+                        );
+                    }
+                }
+            } elseif (!empty($_FILES['guardianSignatureImage']['name'])) { // single file fallback
+                if ($_FILES['guardianSignatureImage']['error'] === UPLOAD_ERR_OK) {
+                    $guardianSignatureFiles[] = new UploadedFile(
+                        $_FILES['guardianSignatureImage']['tmp_name'],
+                        $_FILES['guardianSignatureImage']['name'],
+                        $_FILES['guardianSignatureImage']['type'],
+                        $_FILES['guardianSignatureImage']['size'],
+                        $_FILES['guardianSignatureImage']['error']
+                    );
+                }
+            }
+
+            $result = $this->rentalService->createRentalService($rentalDetails, $signatureFiles, $guardianSignatureFiles);
+
             return $this->respond($res, [
                 'message' => 'Rental created successfully',
                 'rental' => $result['rental'],
                 'accessKey' => $result['accessKey']
             ], 201);
         } catch (Exception $e) {
+            error_log('Controller error: ' . $e->getMessage());
             return $this->respond($res, [
                 'error' => $e->getMessage()
             ], 400);
