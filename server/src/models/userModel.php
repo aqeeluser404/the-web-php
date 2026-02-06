@@ -23,6 +23,8 @@ class User {
     public $rentals;
     public $callLogs;
     public $documents;
+    public $rightsType;
+    public $shuttles;
 
     public function __construct(
         $firstName,
@@ -41,7 +43,9 @@ class User {
         $loginInfo = [],
         $rentals = [],
         $callLogs = [],
-        $documents = []
+        $documents = [],
+        $shuttles = [],
+        $rightsType = null
     ) {
         $this->firstName = $firstName;
         $this->lastName = $lastName;
@@ -54,6 +58,7 @@ class User {
         $this->age = $age; 
         $this->dateOfBirth = $dateOfBirth;
         $this->dateCreated = new UTCDateTime();
+        $this->rightsType = $rightsType; 
 
         // Nested Fields ----------------------------------------------------------------
         
@@ -89,6 +94,7 @@ class User {
         // FOREIGN KEYS
         $this->rentals = array_map(fn($id) => new ObjectId($id), $rentals);
         $this->callLogs = array_map(fn($id) => new ObjectId($id), $callLogs);
+        $this->shuttles = array_map(fn($id) => new ObjectId($id), $shuttles);
 
         // Documents (uploads)
         $this->documents = array_map(function($doc) {

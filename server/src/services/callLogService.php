@@ -91,8 +91,14 @@ class CallLogService {
                 throw new Exception('User not found');
             }
     
-            $callLogs = $this->callLogCollection->find(['_id' => ['$in' => $user['callLogs']]]);
-            
+            if (empty($user['callLogs'])) {
+                return [];
+            }
+
+            $callLogs = $this->callLogCollection->find([
+                '_id' => ['$in' => $user['callLogs']]
+            ]);
+
             $results = [];
             foreach ($callLogs as $doc) {
                 $callLog = [

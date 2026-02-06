@@ -20,6 +20,7 @@ class UserService
     private $rentalCollection;
     private $unitCollection;
     private $callLogCollection;
+    private $shuttleCollection;
     // private $ImageKitService;
     private $emailService;
     private $localFileHelper;
@@ -31,6 +32,7 @@ class UserService
         $this->rentalCollection = $db->Rental;
         $this->unitCollection = $db->Unit;
         $this->callLogCollection = $db->calllogs;
+        $this->shuttleCollection = $db->Shuttle;
         // $this->ImageKitService = new ImageKitService();
         $this->emailService = new EmailService();
         $this->localFileHelper = new LocalFileHelper();
@@ -74,6 +76,54 @@ class UserService
         );
         
         return $age;
+    }
+
+    protected function assignTenantRights($userId) {
+        // Get user's rental IDs
+        $user = $this->userCollection->findOne(['_id' => new ObjectId($userId)]);
+        if (!$user) return null;
+
+        // If user already has a rightsType that is not Tenant or null, do not override
+        if (
+            isset($user['rightsType']) 
+            && $user['rightsType'] !== null 
+            && $user['rightsType'] !== '' 
+            && $user['rightsType'] !== 'Tenant'
+        ) {
+            return $user['rightsType'];
+        }
+
+        $rentalIds = isset($user['rentals']) ? $user['rentals']->getArrayCopy() : [];
+        if (empty($rentalIds)) {
+            // No rentals at all → clear tenant rights
+            $this->userCollection->updateOne(
+                ['_id' => new ObjectId($userId)],
+                ['$unset' => ['rightsType' => 1]]
+            );
+            return null;
+        }
+
+        // Check if there is at least one Active rental
+        $activeRental = $this->rentalCollection->findOne([
+            '_id'   => ['$in' => $rentalIds],
+            'status'=> 'Active'
+        ]);
+
+        if ($activeRental) {
+            // Assign Tenant rights
+            $this->userCollection->updateOne(
+                ['_id' => new ObjectId($userId)],
+                ['$set' => ['rightsType' => 'Tenant']]
+            );
+            return 'Tenant';
+        }
+
+        // No active rentals → clear tenant rights
+        $this->userCollection->updateOne(
+            ['_id' => new ObjectId($userId)],
+            ['$unset' => ['rightsType' => 1]]
+        );
+        return null;
     }
 
     public function userRegisterService($userDetails)
@@ -240,46 +290,50 @@ class UserService
         }
     }
 
-public function findUserByIdService($id)
-{
-    try {
-        $user = $this->userCollection->findOne(['_id' => new ObjectId($id)]);
-        if (!$user) {
-            throw new Exception('User not found');
-        }
+    public function findUserByIdService($id)
+    {
+        try {
+            $user = $this->userCollection->findOne(['_id' => new ObjectId($id)]);
+            if (!$user) {
+                throw new Exception('User not found');
+            }
 
-        // Ensure age is always calculated and saved
-        if (!isset($user['age']) && isset($user['dateOfBirth'])) {
-            $user['age'] = $this->calculateAndSaveAge($id);
-        }
+            // Ensure age is always calculated and saved
+            if (!isset($user['age']) && isset($user['dateOfBirth'])) {
+                $user['age'] = $this->calculateAndSaveAge($id);
+            }
 
-        return $user;
-    } catch (Exception $e) {
-        throw $e;
+            $this->assignTenantRights($id);
+            $user = $this->userCollection->findOne(['_id' => new ObjectId($id)]);
+            return $user;
+        } catch (Exception $e) {
+            throw $e;
+        }
     }
-}
 
-public function findUserByTokenService(string $token)
-{
-    try {
-        $decoded = JWT::decode($token, new Key($_ENV['JWT_SECRET'], 'HS256'));
-        $user = $this->userCollection->findOne(['_id' => new MongoDB\BSON\ObjectId($decoded->_id)]);
+    public function findUserByTokenService(string $token)
+    {
+        try {
+            $decoded = JWT::decode($token, new Key($_ENV['JWT_SECRET'], 'HS256'));
+            $user = $this->userCollection->findOne(['_id' => new MongoDB\BSON\ObjectId($decoded->_id)]);
 
-        if (!$user) {
-            throw new Exception('User not found');
+            if (!$user) {
+                throw new Exception('User not found');
+            }
+
+            // Ensure age is always calculated and saved
+            if (!isset($user['age']) && isset($user['dateOfBirth'])) {
+                $user['age'] = $this->calculateAndSaveAge($decoded->_id);
+            }
+
+            $this->assignTenantRights($decoded->_id);
+            $user = $this->userCollection->findOne(['_id' => new ObjectId($decoded->_id)]);
+            return $user;
+        } catch (Exception $e) {
+            error_log("FindUserByTokenService error: " . $e->getMessage());
+            throw $e;
         }
-
-        // Ensure age is always calculated and saved
-        if (!isset($user['age']) && isset($user['dateOfBirth'])) {
-            $user['age'] = $this->calculateAndSaveAge($decoded->_id);
-        }
-
-        return $user;
-    } catch (Exception $e) {
-        error_log("FindUserByTokenService error: " . $e->getMessage());
-        throw $e;
     }
-}
 
 
     public function createUserService($userDetails)
@@ -352,7 +406,8 @@ public function findUserByTokenService(string $token)
                     'gender' => $doc['gender'] ?? null,
                     'dateCreated' => $this->safeDateFormat($doc['dateCreated'] ?? null),
                     'dateOfBirth' => $this->safeDateFormat($doc['dateOfBirth'] ?? null), // new
-                    'age' => $this->calculateAge($doc['dateOfBirth'] ?? null) // new
+                    'age' => $this->calculateAge($doc['dateOfBirth'] ?? null),
+                    'rightsType' => $doc['rightsType'] ?? null
                 ];
 
                 $user['studentInfo'] = isset($doc['studentInfo']) ? [
@@ -389,6 +444,10 @@ public function findUserByTokenService(string $token)
 
                 $user['callLogs'] = isset($doc['callLogs'])
                     ? array_map(fn($id) => (string) $id, $doc['callLogs']->getArrayCopy())
+                    : [];
+
+                $user['shuttles'] = isset($doc['shuttles'])
+                    ? array_map(fn($id) => (string) $id, $doc['shuttles']->getArrayCopy())
                     : [];
 
                 $results[] = $user;
@@ -483,6 +542,14 @@ public function findUserByTokenService(string $token)
 
             // Remove associated call logs BEFORE deleting the user
             $this->callLogCollection->deleteMany([
+                '$or' => [
+                    ['user' => new ObjectId($id)],  // Handles ObjectId format
+                    ['user' => $id]                 // Handles string format
+                ]
+            ]);
+
+            // Remove associated shuttles BEFORE deleting the user
+            $this->shuttleCollection->deleteMany([
                 '$or' => [
                     ['user' => new ObjectId($id)],  // Handles ObjectId format
                     ['user' => $id]                 // Handles string format

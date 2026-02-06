@@ -164,6 +164,12 @@ class EmailService {
             </p>
         ";
 
+        $attachmentPath = $_SERVER['DOCUMENT_ROOT'] . '/backend/server/attachments/ApplicationForm.pdf';
+
+        if (file_exists($attachmentPath)) {
+            $mail->addAttachment($attachmentPath, 'ApplicationForm.pdf');
+        }
+
         try {
             $mail->send();
             echo 'Email sent successfully!';
