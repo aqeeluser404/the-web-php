@@ -126,6 +126,53 @@ class UserService
         return null;
     }
 
+    public function handleOtpCheck($user) {
+        $otpWindowHours = 24;
+        $otpVerifiedAt = $user['loginInfo']['otpVerifiedAt'] ?? null;
+        $otpStillValid = false;
+
+        if ($otpVerifiedAt) {
+            $lastOtp = $otpVerifiedAt->toDateTime()->getTimestamp();
+            if ($lastOtp > (time() - ($otpWindowHours * 3600))) {
+                $otpStillValid = true;
+            }
+        }
+        if (!$otpStillValid) {
+            $currentOtp   = $user['loginInfo']['currentOtp'] ?? null;
+            $otpExpiresAt = $user['loginInfo']['otpExpiresAt'] ?? null;
+
+            if (!$currentOtp || !$otpExpiresAt || $otpExpiresAt->toDateTime()->getTimestamp() < time()) {
+                $otp = random_int(100000, 999999);
+
+                $this->userCollection->updateOne(
+                    ['_id' => new ObjectId($user['_id'])],
+                    ['$set' => [
+                        'loginInfo.currentOtp'   => $otp,
+                        'loginInfo.otpExpiresAt' => new UTCDateTime((time() + 300) * 1000)
+                    ]]
+                );
+
+                $this->emailService->sendOtpEmail($user, $otp);
+            }
+            return false;
+        }
+        return true; 
+    }
+
+    public function generateJwt($user, $expirySeconds = 7200) {
+        return JWT::encode(
+            [
+                '_id' => (string) $user['_id'],
+                'userType' => $user['userType'],
+                // 'exp' => time() + 86400 // Token expires in 24 hours (86400 seconds)
+                // 'exp' => time() + 60 // Token expires in 60 seconds (1 minute)
+                'exp' => time() + 7200 // Token expires in 2 hours (7200 seconds)
+            ],
+            $_ENV['JWT_SECRET'],
+            'HS256'
+        );
+    }
+
     public function userRegisterService($userDetails)
     {
         try {
@@ -206,6 +253,71 @@ class UserService
         }
     }
 
+    // public function userLoginService($username, $email, $password)
+    // {
+    //     try {
+    //         $user = $this->userCollection->findOne([
+    //             '$or' => [
+    //                 ['username' => $username],
+    //                 ['email' => $email]
+    //             ]
+    //         ]);
+    //         if (!$user) {
+    //             throw new Exception('User not found');
+    //         }
+
+    //         if (!password_verify($password, $user['password'])) {
+    //             error_log("Password verification failed for user: " . $user['username']);
+    //             throw new Exception('Invalid password');
+    //         }
+
+    //         // GENERATE JWT TOKEN
+    //         $token = JWT::encode(
+    //             [
+    //                 '_id' => (string) $user['_id'],
+    //                 'userType' => $user['userType'],
+    //                 // 'exp' => time() + 86400 // Token expires in 24 hours (86400 seconds)
+    //                 // 'exp' => time() + 60 // Token expires in 60 seconds (1 minute)
+    //                 'exp' => time() + 7200 // Token expires in 2 hours (7200 seconds)
+    //             ],
+    //             $_ENV['JWT_SECRET'],
+    //             'HS256'
+    //         );
+
+    //         return $token;
+    //     } catch (Exception $e) {
+    //         error_log("Error in userLoginService: " . $e->getMessage());
+    //         throw $e;
+    //     }
+    // }
+
+    
+    public function adminLoginService($username, $email) {
+        try {
+            $user = $this->userCollection->findOne([
+                '$or' => [
+                    ['username' => $username],
+                    ['email' => $email]
+                ]
+            ]);
+            if (!$user) {
+                throw new Exception('User not found');
+            }
+            $token = JWT::encode(
+                [
+                    '_id' => (string) $user['_id'],
+                    'userType' => $user['userType'],
+                    'exp' => time() + 7200 // 2 hours expiry
+                ],
+                $_ENV['JWT_SECRET'],
+                'HS256'
+            );
+            return $token;
+        } catch (Exception $e) {
+            error_log("Error in autoLoginService: " . $e->getMessage());
+            throw $e;
+        }
+    }
 
     public function userLoginService($username, $email, $password)
     {
@@ -220,29 +332,60 @@ class UserService
                 throw new Exception('User not found');
             }
 
+            $otpValid = $this->handleOtpCheck($user);
+            if (!$otpValid) {
+                return 'otp_required';
+            }
+
             if (!password_verify($password, $user['password'])) {
                 error_log("Password verification failed for user: " . $user['username']);
                 throw new Exception('Invalid password');
             }
 
-            // GENERATE JWT TOKEN
-            $token = JWT::encode(
-                [
-                    '_id' => (string) $user['_id'],
-                    'userType' => $user['userType'],
-                    // 'exp' => time() + 86400 // Token expires in 24 hours (86400 seconds)
-                    // 'exp' => time() + 60 // Token expires in 60 seconds (1 minute)
-                    'exp' => time() + 7200 // Token expires in 2 hours (7200 seconds)
-                ],
-                $_ENV['JWT_SECRET'],
-                'HS256'
-            );
+            $token = $this->generateJwt($user);
 
-            return $token;
+            $refreshToken = $this->generateJwt($user, 604800);
+
+            return [
+                'user' => $user,
+                'accessToken' => $token,
+                'refreshToken' => $refreshToken
+            ];
         } catch (Exception $e) {
             error_log("Error in userLoginService: " . $e->getMessage());
             throw $e;
         }
+    }
+
+    public function validateOtpCode($userId, $submittedOtp) {
+        $user = $this->userCollection->findOne(['_id' => new ObjectId($userId)]);
+        if (!$user) {
+            throw new Exception('User not found');
+        }
+        $currentOtp   = $user['loginInfo']['currentOtp'] ?? null;
+        $otpExpiresAt = $user['loginInfo']['otpExpiresAt'] ?? null;
+
+        if (!$currentOtp || !$otpExpiresAt) {
+            throw new Exception('No OTP pending');
+        }
+
+        if ($otpExpiresAt->toDateTime()->getTimestamp() < time()) {
+            throw new Exception('OTP expired');
+        }
+
+        if ($submittedOtp != $currentOtp) {
+            throw new Exception('Invalid OTP');
+        }
+
+        $this->userCollection->updateOne(
+            ['_id' => new ObjectId($user['_id'])],
+            ['$set' => [
+                'loginInfo.otpVerifiedAt' => new UTCDateTime(),
+                'loginInfo.currentOtp'    => null,
+                'loginInfo.otpExpiresAt'  => null
+            ]]
+        );
+        return true;
     }
 
     public function userLogoutService($id)
@@ -407,7 +550,8 @@ class UserService
                     'dateCreated' => $this->safeDateFormat($doc['dateCreated'] ?? null),
                     'dateOfBirth' => $this->safeDateFormat($doc['dateOfBirth'] ?? null), // new
                     'age' => $this->calculateAge($doc['dateOfBirth'] ?? null),
-                    'rightsType' => $doc['rightsType'] ?? null
+                    'rightsType' => $doc['rightsType'] ?? null,
+                    'hasShuttle' => $doc['hasShuttle'] ?? false
                 ];
 
                 $user['studentInfo'] = isset($doc['studentInfo']) ? [

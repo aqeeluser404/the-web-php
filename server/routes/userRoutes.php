@@ -23,6 +23,10 @@ return function (App $app) {
 
     $app->post('/api/auth/login', [UserController::class, 'userLoginController']); // POST LOGIN
 
+    $app->post('/api/auth/admin-login', [UserController::class, 'adminLoginController']);
+
+    $app->post('/api/auth/verify-otp', [UserController::class, 'validateOtpController']); // POST OTP
+
     $app->post('/api/auth/register', [UserController::class, 'userRegisterController']); // POST REGISTER
     
     $app->post('/api/auth/logout/{id}', [UserController::class, 'userLogoutController']); // POST LOGOUT->ID

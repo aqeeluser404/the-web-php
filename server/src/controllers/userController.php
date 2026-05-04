@@ -2,6 +2,8 @@
 require_once __DIR__ . '/../services/userService.php';
 require_once __DIR__ . '/../../../vendor/autoload.php';
 
+use Firebase\JWT\JWT;
+use Firebase\JWT\Key;
 use Dotenv\Dotenv;
 use Slim\Psr7\Request;
 use Slim\Psr7\Response;
@@ -13,36 +15,41 @@ use Psr\Http\Message\ServerRequestInterface;
 $dotenv = Dotenv::createImmutable(__DIR__ . '/../../../');
 $dotenv->load();
 
-class UserController {
+class UserController
+{
     private $userCollection;
     private $userService;
 
-    public function __construct() {
+    public function __construct()
+    {
         $db = Database::getDb();
         $this->userCollection = $db->User;
         $this->userService = new UserService();
     }
 
-    protected function respond(Response $response, $data, int $status = 200): Response {
+    protected function respond(Response $response, $data, int $status = 200): Response
+    {
         $response->getBody()->write(json_encode($data));
         return $response
             ->withStatus($status)
             ->withHeader('Content-Type', 'application/json');
     }
 
-    protected function respondText(Response $response, string $text, int $status = 200): Response {
+    protected function respondText(Response $response, string $text, int $status = 200): Response
+    {
         $response->getBody()->write($text);
         return $response
             ->withStatus($status)
             ->withHeader('Content-Type', 'text/plain');
     }
 
-    public function createUserController(Request $req, Response $res): Response {
+    public function createUserController(Request $req, Response $res): Response
+    {
         try {
             $userDetails = $req->getParsedBody();
             $this->userService->createUserService($userDetails);
 
-            return $this->respond($res,  ['message' => 'User created successfully'], 201);
+            return $this->respond($res, ['message' => 'User created successfully'], 201);
         } catch (Exception $e) {
             return $this->respond($res, [
                 'error' => $e->getMessage()
@@ -50,7 +57,8 @@ class UserController {
         }
     }
 
-    public function userRegisterController(Request $req, Response $res): Response {
+    public function userRegisterController(Request $req, Response $res): Response
+    {
         try {
             $userDetails = $req->getParsedBody();
             $this->userService->userRegisterService($userDetails);
@@ -63,53 +71,100 @@ class UserController {
         }
     }
 
-    public function userLoginController(Request $req, Response $res): Response {
+    // public function userLoginController(Request $req, Response $res): Response {
+    //     try {
+    //         $body = $req->getParsedBody();
+
+    //         $username = $body['username'] ?? null;
+    //         $email = $body['email'] ?? null;
+    //         $password = $body['password'] ?? null;
+
+    //         if (!$username && !$email) {
+    //             throw new Exception("Username or email must be provided");
+    //         }
+
+    //         $token = $this->userService->userLoginService($username, $email, $password);
+    //         $user = $this->userService->findUserByTokenService($token);
+
+    //         $isProduction = ($_ENV['NODE_ENV'] ?? 'development') === 'production';
+    //         if ($user['loginInfo']['isLoggedIn'] && $user['loginInfo']['loginToken'] !== $token) {
+    //             $removeLoginData = ['loginInfo.isLoggedIn' => false, 'loginInfo.loginToken' => null];
+    //             $this->userCollection->updateOne(
+    //                 ['_id' => new ObjectId($user['_id'])],
+    //                 ['$set' => $removeLoginData]
+    //             );
+    //             setcookie('token', '', [
+    //                 'expires' => time() - 3600,            // Expire immediately
+    //                 'path' => '/',
+    //                 'secure' => $isProduction,
+    //                 'httponly' => true,
+    //                 'samesite'  => 'None'
+    //             ]);
+    //         }
+
+    //         // Update user login status
+    //         $updateData = [
+    //             'loginInfo.lastLogin' => new UTCDateTime(),
+    //             'loginInfo.isLoggedIn' => true,
+    //             'loginInfo.loginCount' => $user['loginInfo']['loginCount'] + 1,
+    //             'loginInfo.loginToken' => $token
+    //         ];
+    //         $this->userCollection->updateOne(
+    //             ['_id' => new ObjectId($user['_id'])],
+    //             ['$set' => $updateData]
+    //         );
+
+    //         // $maxAge = 24 * 60 * 60;                     // 1 day till token expires
+    //         // $maxAge = 60;   // Token expires in 1 minute
+    //         $maxAge = 7200; // Token expires in 2 hours (7200 seconds)
+
+    //         setcookie('token', $token, [
+    //             'expires'   => time() + $maxAge,
+    //             'path'      => '/',
+    //             'secure'    => $isProduction,
+    //             'httponly'  => true,
+    //             'samesite'  => 'None'
+    //         ]);
+
+    //         return $this->respondText($res, $token);
+    //     } catch (Exception $e) {
+    //         return $this->respond($res, [
+    //             'error' => $e->getMessage()
+    //         ], 400);
+    //     }
+    // }
+
+
+    public function adminLoginController(Request $req, Response $res): Response {
         try {
             $body = $req->getParsedBody();
-    
+
             $username = $body['username'] ?? null;
             $email = $body['email'] ?? null;
-            $password = $body['password'] ?? null;
-    
+
             if (!$username && !$email) {
                 throw new Exception("Username or email must be provided");
             }
-    
-            $token = $this->userService->userLoginService($username, $email, $password);
-            $user = $this->userService->findUserByTokenService($token);
-    
-            $isProduction = ($_ENV['NODE_ENV'] ?? 'development') === 'production';
-            if ($user['loginInfo']['isLoggedIn'] && $user['loginInfo']['loginToken'] !== $token) {
-                $removeLoginData = ['loginInfo.isLoggedIn' => false, 'loginInfo.loginToken' => null];
-                $this->userCollection->updateOne(
-                    ['_id' => new ObjectId($user['_id'])],
-                    ['$set' => $removeLoginData]
-                );
-                setcookie('token', '', [
-                    'expires' => time() - 3600,            // Expire immediately
-                    'path' => '/',
-                    'secure' => $isProduction,
-                    'httponly' => true,
-                    'samesite'  => 'None'
-                ]);
-            }
 
-            // Update user login status
+            $token = $this->userService->adminLoginService($username, $email);
+            $user = $this->userService->findUserByTokenService($token);
+
+            $isProduction = ($_ENV['NODE_ENV'] ?? 'development') === 'production';
+
             $updateData = [
                 'loginInfo.lastLogin' => new UTCDateTime(),
                 'loginInfo.isLoggedIn' => true,
                 'loginInfo.loginCount' => $user['loginInfo']['loginCount'] + 1,
                 'loginInfo.loginToken' => $token
             ];
+
             $this->userCollection->updateOne(
                 ['_id' => new ObjectId($user['_id'])],
                 ['$set' => $updateData]
             );
 
-            // $maxAge = 24 * 60 * 60;                     // 1 day till token expires
-            // $maxAge = 60;   // Token expires in 1 minute
-            $maxAge = 7200; // Token expires in 2 hours (7200 seconds)
-            
+            $maxAge = 7200;
+
             setcookie('token', $token, [
                 'expires'   => time() + $maxAge,
                 'path'      => '/',
@@ -126,13 +181,133 @@ class UserController {
         }
     }
 
-    public function userLogoutController($req, $res) {
+    public function userLoginController(Request $req, Response $res): Response {
+        try {
+            $isProduction = ($_ENV['NODE_ENV'] ?? 'development') === 'production';
+
+            // auto-login
+            $autoLoginResponse = $this->autoLoginController($req, $res, $isProduction);
+            if ($autoLoginResponse) {
+                return $autoLoginResponse;
+            }
+            return $this->normalLoginController($req, $res, $isProduction);
+        } catch (Exception $e) {
+            return $this->respond($res, ['error' => $e->getMessage()], 400);
+        }
+    }
+
+    public function autoLoginController(Request $req, Response $res, bool $isProduction): ?Response {
+        $refreshToken = $req->getCookieParams()['refreshToken'] ?? null;
+        if (!$refreshToken) {
+            return null;
+        }
+        try {
+            $decoded = JWT::decode($refreshToken, new Key($_ENV['JWT_SECRET'], 'HS256'));
+            $user = $this->userCollection->findOne(['_id' => new ObjectId($decoded->_id)]);
+            if ($user && $this->userService->handleOtpCheck($user)) {
+                $accessToken = $this->userService->generateJwt($user);
+
+                $updateData = [
+                    'loginInfo.lastLogin' => new UTCDateTime(),
+                    'loginInfo.isLoggedIn' => true,
+                    'loginInfo.loginCount' => $user['loginInfo']['loginCount'] + 1,
+                    'loginInfo.loginToken' => $accessToken
+                ];
+                $this->userCollection->updateOne(
+                    ['_id' => new ObjectId($user['_id'])],
+                    ['$set' => $updateData]
+                );
+
+                setcookie('token', $accessToken, [
+                    'expires'   => time() + 7200,
+                    'path'      => '/',
+                    'secure'    => $isProduction,
+                    'httponly'  => true,
+                    'samesite'  => 'None'
+                ]);
+
+                return $this->respondText($res, $accessToken);
+            }
+        } catch (Exception $e) {}
+        return null; 
+    }
+
+    protected function normalLoginController(Request $req, Response $res, bool $isProduction): Response {
+        $body = $req->getParsedBody();
+        $username = $body['username'] ?? null;
+        $email = $body['email'] ?? null;
+        $password = $body['password'] ?? null;
+
+        if (!$username && !$email) {
+            throw new Exception("Username or email must be provided");
+        }
+
+        $tokens = $this->userService->userLoginService($username, $email, $password);
+        $user = $tokens['user'];
+        $accessToken = $tokens['accessToken'];
+        $refreshToken = $tokens['refreshToken'];
+
+        $updateData = [
+            'loginInfo.lastLogin' => new UTCDateTime(),
+            'loginInfo.isLoggedIn' => true,
+            'loginInfo.loginCount' => $user['loginInfo']['loginCount'] + 1,
+            'loginInfo.loginToken' => $accessToken,
+            'loginInfo.refreshToken' => $refreshToken
+        ];
+        $this->userCollection->updateOne(
+            ['_id' => new ObjectId($user['_id'])],
+            ['$set' => $updateData]
+        );
+
+        setcookie('token', $accessToken, [
+            'expires'   => time() + 7200,
+            'path'      => '/',
+            'secure'    => $isProduction,
+            'httponly'  => true,
+            'samesite'  => 'None'
+        ]);
+        setcookie('refreshToken', $refreshToken, [
+            'expires'   => time() + 604800,
+            'path'      => '/',
+            'secure'    => $isProduction,
+            'httponly'  => true,
+            'samesite'  => 'None'
+        ]);
+        return $this->respondText($res, $accessToken);
+    }
+
+    public function validateOtpController(Request $req, Response $res): Response {
+        $body = $req->getParsedBody();
+        $userId = $body['userId'] ?? null;
+        $submittedOtp = $body['otp'] ?? null;
+
+        try {
+            $valid = $this->userService->validateOtpCode($userId, $submittedOtp);
+            if ($valid) {
+                return $this->respond($res, ['status' => 'otp_verified']);
+            }
+            return $this->respond($res, ['error' => 'Invalid or expired OTP'], 400);
+        } catch (Exception $e) {
+            return $this->respond($res, ['error' => $e->getMessage()], 400);
+        }
+    }
+
+
+// Report monthly/weekly for shuttle
+// driver account
+
+
+
+
+
+    public function userLogoutController($req, $res)
+    {
         try {
             $id = $req->getAttribute('id');
             $this->userService->userLogoutService($id);
-    
+
             $isProduction = $_ENV['NODE_ENV'] === 'production';
-    
+
             setcookie('token', '', [
                 'expires' => time() - 3600,            // Expire immediately
                 'path' => '/',
@@ -140,7 +315,7 @@ class UserController {
                 'httponly' => true,
                 'samesite' => 'None'
             ]);
-            return $this->respond($res,  ['message' => 'User logged out successfully'], 200);
+            return $this->respond($res, ['message' => 'User logged out successfully'], 200);
         } catch (Exception $e) {
             return $this->respond($res, [
                 'error' => $e->getMessage()
@@ -148,10 +323,11 @@ class UserController {
         }
     }
 
-    public function findUsersLoggedInController($req, $res) {
+    public function findUsersLoggedInController($req, $res)
+    {
         try {
             $users = $this->userService->findUsersLoggedInService();
-            return $this->respond($res,  $users, 200);
+            return $this->respond($res, $users, 200);
         } catch (Exception $e) {
             return $this->respond($res, [
                 'error' => $e->getMessage()
@@ -159,10 +335,11 @@ class UserController {
         }
     }
 
-    public function findUsersFrequentlyLoggedInController($req, $res) {
+    public function findUsersFrequentlyLoggedInController($req, $res)
+    {
         try {
             $users = $this->userService->findUsersFrequentlyLoggedInService();
-            return $this->respond($res,  $users, 200);
+            return $this->respond($res, $users, 200);
         } catch (Exception $e) {
             return $this->respond($res, [
                 'error' => $e->getMessage()
@@ -170,11 +347,12 @@ class UserController {
         }
     }
 
-    public function findUserByIdController($req, $res) {
+    public function findUserByIdController($req, $res)
+    {
         try {
             $id = $req->getAttribute('id');
             $user = $this->userService->findUserByIdService($id);
-            return $this->respond($res,  $user, 200);
+            return $this->respond($res, $user, 200);
         } catch (Exception $e) {
             return $this->respond($res, [
                 'error' => $e->getMessage()
@@ -186,18 +364,18 @@ class UserController {
     {
         try {
             $token = $req->getCookieParams()['token'] ?? null;
-            
+
             if (!$token && preg_match('/Bearer\s+(.*)$/i', $req->getHeaderLine('Authorization'), $matches)) {
                 $token = $matches[1];
             }
-    
+
             if (!$token) {
-                return $this->respond($res,  ['message' => 'Access Denied'], 401);
+                return $this->respond($res, ['message' => 'Access Denied'], 401);
             }
-    
+
             $user = $this->userService->findUserByTokenService($token);
 
-            return $this->respond($res,  $user, 200);
+            return $this->respond($res, $user, 200);
         } catch (Exception $e) {
             return $this->respond($res, [
                 'error' => $e->getMessage()
@@ -205,10 +383,11 @@ class UserController {
         }
     }
 
-    public function findAllUsersController($req, $res) {
+    public function findAllUsersController($req, $res)
+    {
         try {
             $users = $this->userService->findAllUsersService();
-            return $this->respond($res,  $users, 200);
+            return $this->respond($res, $users, 200);
         } catch (Exception $e) {
             return $this->respond($res, [
                 'error' => $e->getMessage()
@@ -216,13 +395,14 @@ class UserController {
         }
     }
 
-    public function updateUserController($req, $res) {
+    public function updateUserController($req, $res)
+    {
         try {
             $id = $req->getAttribute('id');
             $userDetails = $req->getParsedBody();
 
             $this->userService->updateUserService($id, $userDetails);
-            return $this->respond($res,  ['message' => 'User updated successfully'], 200);
+            return $this->respond($res, ['message' => 'User updated successfully'], 200);
         } catch (Exception $e) {
             return $this->respond($res, [
                 'error' => $e->getMessage()
@@ -230,11 +410,12 @@ class UserController {
         }
     }
 
-    public function deleteUserController($req, $res) {
+    public function deleteUserController($req, $res)
+    {
         try {
             $id = $req->getAttribute('id');
             $this->userService->deleteUserService($id);
-            return $this->respond($res,  ['message' => 'User deleted successfully'], 200);
+            return $this->respond($res, ['message' => 'User deleted successfully'], 200);
         } catch (Exception $e) {
             return $this->respond($res, [
                 'error' => $e->getMessage()
@@ -242,12 +423,13 @@ class UserController {
         }
     }
 
-    public function uploadUserDocsController($req, $res) {
+    public function uploadUserDocsController($req, $res)
+    {
         try {
             $userId = $req->getAttribute('id');
             $files = $req->getUploadedFiles();
             $result = $this->userService->uploadUserDocsService($userId, $files);
-            return $this->respond($res,  $result, 200);
+            return $this->respond($res, $result, 200);
         } catch (Exception $e) {
             return $this->respond($res, [
                 'error' => $e->getMessage()
@@ -255,11 +437,12 @@ class UserController {
         }
     }
 
-    public function clearAllUserDocsController($req, $res) {
+    public function clearAllUserDocsController($req, $res)
+    {
         try {
             $userId = $req->getAttribute('id');
             $result = $this->userService->clearAllUserDocsService($userId);
-            return $this->respond($res,  $result, 200);
+            return $this->respond($res, $result, 200);
         } catch (Exception $e) {
             return $this->respond($res, [
                 'error' => $e->getMessage()
@@ -267,12 +450,13 @@ class UserController {
         }
     }
 
-    public function removeUserDocController($req, $res) {
+    public function removeUserDocController($req, $res)
+    {
         try {
             $userId = $req->getAttribute('id');
             $fileId = $req->getAttribute('doc');
             $result = $this->userService->removeUserDocService($userId, $fileId);
-            return $this->respond($res,  $result, 200);
+            return $this->respond($res, $result, 200);
         } catch (Exception $e) {
             return $this->respond($res, [
                 'error' => $e->getMessage()

@@ -25,6 +25,7 @@ class User {
     public $documents;
     public $rightsType;
     public $shuttles;
+    public $hasShuttle;
 
     public function __construct(
         $firstName,
@@ -45,7 +46,8 @@ class User {
         $callLogs = [],
         $documents = [],
         $shuttles = [],
-        $rightsType = null
+        $rightsType = null,
+        $hasShuttle = false
     ) {
         $this->firstName = $firstName;
         $this->lastName = $lastName;
@@ -59,6 +61,7 @@ class User {
         $this->dateOfBirth = $dateOfBirth;
         $this->dateCreated = new UTCDateTime();
         $this->rightsType = $rightsType; 
+        $this->hasShuttle = $hasShuttle;
 
         // Nested Fields ----------------------------------------------------------------
         
@@ -84,11 +87,22 @@ class User {
         ], $forgotPassword);
 
         // Login Info
+        // $this->loginInfo = array_merge([
+        //     'lastLogin' => null,
+        //     'isLoggedIn' => false,
+        //     'loginCount' => 0,
+        //     'loginToken' => null
+        // ], $loginInfo);
+
+        // Login Info
         $this->loginInfo = array_merge([
             'lastLogin' => null,
             'isLoggedIn' => false,
             'loginCount' => 0,
-            'loginToken' => null
+            'loginToken' => null,
+            'refreshToken' => null,
+            'currentOtp' => null,
+            'otpVerifiedAt' => null
         ], $loginInfo);
 
         // FOREIGN KEYS

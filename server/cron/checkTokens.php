@@ -49,6 +49,47 @@ class TokenChecker {
         // logMessage("Database connection initialized.");
     }
 
+    // public function checkTokens() {
+    //     logMessage("======= USER LOGIN CHECK STARTED =======");
+
+    //     $users = $this->userModel->find(['loginInfo.isLoggedIn' => true]);
+
+    //     if (empty($users)) {
+    //         logMessage("No logged-in users found.");
+    //         logMessage("======= USER LOGIN CHECK COMPLETED =======");
+    //         return;
+    //     }
+
+    //     foreach ($users as $user) {
+    //         logMessage("Processing user ID: {$user['_id']}");
+    //         $token = $user['loginInfo']['loginToken'] ?? "No token found";
+    //         logMessage("User Token: {$token}");
+
+    //         if ($token && $token !== "No token found") {
+    //             try {
+    //                 JWT::decode($token, new Key($_ENV['JWT_SECRET'], 'HS256'));
+    //                 logMessage("✅ Token for user {$user['_id']} is VALID.");
+    //             } catch (Exception $e) {
+    //                 logMessage("❌ Token for user {$user['_id']} is INVALID or EXPIRED: " . $e->getMessage());
+
+    //                 if ($e instanceof \Firebase\JWT\ExpiredException) {
+    //                     $this->userModel->updateOne(
+    //                         ['_id' => $user['_id']],
+    //                         ['$set' => ['loginInfo.isLoggedIn' => false, 'loginInfo.loginToken' => null]]
+    //                     );
+    //                     logMessage("🔴 User {$user['_id']} logged out due to expired token.");
+    //                     $this->callLogoutEndpoint($user['_id']);
+    //                 }
+    //             }
+    //         }
+
+    //         logMessage("---------------------------------");
+    //     }
+
+    //     logMessage("======= USER LOGIN CHECK COMPLETED =======");
+    //     $this->checkRentalsToEnd();
+    // }
+
     public function checkTokens() {
         logMessage("======= USER LOGIN CHECK STARTED =======");
 
@@ -62,6 +103,8 @@ class TokenChecker {
 
         foreach ($users as $user) {
             logMessage("Processing user ID: {$user['_id']}");
+            
+            $refreshToken = $user['loginInfo']['refreshToken'] ?? null;
             $token = $user['loginInfo']['loginToken'] ?? "No token found";
             logMessage("User Token: {$token}");
 
@@ -78,6 +121,27 @@ class TokenChecker {
                             ['$set' => ['loginInfo.isLoggedIn' => false, 'loginInfo.loginToken' => null]]
                         );
                         logMessage("🔴 User {$user['_id']} logged out due to expired token.");
+                        $this->callLogoutEndpoint($user['_id']);
+                    }
+                }
+            }
+
+            if ($refreshToken) {
+                try {
+                    JWT::decode($refreshToken, new Key($_ENV['JWT_SECRET'], 'HS256'));
+                    logMessage("✅ Refresh token for user {$user['_id']} is VALID.");
+                } catch (Exception $e) {
+                    logMessage("❌ Refresh token for user {$user['_id']} is INVALID or EXPIRED: " . $e->getMessage());
+                    if ($e instanceof \Firebase\JWT\ExpiredException) {
+                        $this->userModel->updateOne(
+                            ['_id' => $user['_id']],
+                            ['$set' => [
+                                'loginInfo.isLoggedIn' => false,
+                                'loginInfo.loginToken' => null,
+                                'loginInfo.refreshToken' => null
+                            ]]
+                        );
+                        logMessage("🔴 User {$user['_id']} logged out due to expired refresh token.");
                         $this->callLogoutEndpoint($user['_id']);
                     }
                 }
@@ -106,19 +170,39 @@ class TokenChecker {
 
     private function checkRentalsToEnd() {
         logMessage("========== RENTAL CHECK STARTED ==========");
-        
+
         $now = new DateTime();
         logMessage("Current Time: {$now->format('Y-m-d H:i:s')}");
 
         try {
+            // Query rentals with UTCDateTime end dates
             $query = [
                 'status' => 'Active',
-                'rentalEndDate' => ['$lte' => new MongoDB\BSON\UTCDateTime($now->getTimestamp() * 1000)]
+                'rentalEndDate' => [
+                    '$lte' => new MongoDB\BSON\UTCDateTime($now->getTimestamp() * 1000)
+                ]
             ];
             $cursor = $this->rentalModel->find($query);
             $rentalsToEnd = iterator_to_array($cursor);
-            $count = count($rentalsToEnd);
 
+            // Also check rentals where rentalEndDate is stored as string
+            $stringDateRentals = $this->rentalModel->find([
+                'status' => 'Active',
+                'rentalEndDate' => ['$type' => 'string']
+            ]);
+
+            foreach ($stringDateRentals as $rental) {
+                try {
+                    $endDateObj = new DateTime($rental['rentalEndDate']);
+                    if ($endDateObj <= $now) {
+                        $rentalsToEnd[] = $rental;
+                    }
+                } catch (Exception $e) {
+                    logMessage("⚠️ Skipped rental {$rental['_id']} due to invalid date format: {$rental['rentalEndDate']}");
+                }
+            }
+
+            $count = count($rentalsToEnd);
             logMessage("Found {$count} rentals to process.");
 
             if ($count === 0) {
@@ -130,7 +214,7 @@ class TokenChecker {
 
             foreach ($rentalsToEnd as $rental) {
                 $rentalId = (string) $rental['_id'];
-                $endDate = $rental['rentalEndDate'] instanceof MongoDB\BSON\UTCDateTime 
+                $endDate = $rental['rentalEndDate'] instanceof MongoDB\BSON\UTCDateTime
                     ? $rental['rentalEndDate']->toDateTime()->format('Y-m-d H:i:s')
                     : (string) $rental['rentalEndDate'];
 

@@ -31,6 +31,17 @@ class RentalController {
             ->withHeader('Content-Type', 'application/json');
     }
 
+    public function syncRentalController($req, $res) {
+        try {
+            $this->rentalService->syncRentalService();
+            return $this->respond($res,  ['message' => 'Rental synced successfully'], 200);
+        } catch (Exception $e) {
+            return $this->respond($res, [
+                'error' => $e->getMessage()
+            ], 404);
+        }
+    }
+
     public function createRentalController($req, $res) {
         try {
             $rentalDetails = $req->getParsedBody();
@@ -152,6 +163,18 @@ class RentalController {
             $id = $req->getAttribute('id');
             $rentalDetails = $req->getParsedBody();
             $updatedRental = $this->rentalService->updateRentalService($id, $rentalDetails);
+            return $this->respond($res,  $updatedRental, 200);
+        } catch (Exception $e) {
+            return $this->respond($res, [
+                'error' => $e->getMessage()
+            ], 404);
+        }
+    }
+
+    public function reassignUnitController($req, $res) {
+        try {
+            $reassignDetails = $req->getParsedBody();
+            $updatedRental = $this->rentalService->reassignUnitService($reassignDetails);
             return $this->respond($res,  $updatedRental, 200);
         } catch (Exception $e) {
             return $this->respond($res, [

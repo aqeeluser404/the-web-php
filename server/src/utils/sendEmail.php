@@ -19,6 +19,32 @@ class EmailService {
         $this->bypassTransporter = new AmazonBypassTransporter();
     }
 
+    public function sendOtpEmail($user, $otp) {
+        $mail = $this->transporter;
+
+        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
+        $mail->addAddress($user['email']);
+        $mail->Subject = 'Your One-Time Password (OTP)';
+        $mail->isHTML(true);
+
+        $mail->Body = "
+            <p>Dear {$user['firstName']},</p>
+            <p>We received a request to verify your login. Please use the OTP below:</p>
+            <h2 style='color:#2c3e50;'>{$otp}</h2>
+            <p>This OTP will expire in 5 minutes. Do not share it with anyone.</p>
+            <p>If you did not request this, please ignore this email.</p>
+            <p>Best regards,<br>The-WEB Team</p>
+        ";
+
+        try {
+            $mail->send();
+            error_log('OTP email sent successfully to ' . $user['email']);
+        } catch (Exception $e) {
+            error_log('Mailer Error: ' . $mail->ErrorInfo);
+            throw new Exception('Failed to send OTP email');
+        }
+    }
+
     public function verifyEmail($user) {
         $mail = $this->transporter;
 
@@ -242,9 +268,15 @@ class EmailService {
         $mail = $this->transporter;
 
         // Format the rental start date
-        $formattedStartDate = isset($rental['rentalStartDate']) 
-            ? date('d M Y', strtotime($rental['rentalStartDate'])) 
-            : '[Start Date Not Specified]';
+        if (isset($rental['rentalStartDate'])) {
+            if ($rental['rentalStartDate'] instanceof MongoDB\BSON\UTCDateTime) {
+                $formattedStartDate = $rental['rentalStartDate']->toDateTime()->format('d M Y');
+            } else {
+                $formattedStartDate = date('d M Y', strtotime($rental['rentalStartDate']));
+            }
+        } else {
+            $formattedStartDate = '[Start Date Not Specified]';
+        }
 
         $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
         $mail->addAddress($user['email']);
