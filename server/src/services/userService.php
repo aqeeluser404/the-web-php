@@ -21,6 +21,7 @@ class UserService
     private $unitCollection;
     private $callLogCollection;
     private $shuttleCollection;
+    private $visitorCollection;
     // private $ImageKitService;
     private $emailService;
     private $localFileHelper;
@@ -33,6 +34,7 @@ class UserService
         $this->unitCollection = $db->Unit;
         $this->callLogCollection = $db->calllogs;
         $this->shuttleCollection = $db->Shuttle;
+        $this->visitorCollection = $db->Visitor;
         // $this->ImageKitService = new ImageKitService();
         $this->emailService = new EmailService();
         $this->localFileHelper = new LocalFileHelper();
@@ -694,6 +696,14 @@ class UserService
 
             // Remove associated shuttles BEFORE deleting the user
             $this->shuttleCollection->deleteMany([
+                '$or' => [
+                    ['user' => new ObjectId($id)],  // Handles ObjectId format
+                    ['user' => $id]                 // Handles string format
+                ]
+            ]);
+
+            // Remove associated visitors BEFORE deleting the user
+            $this->visitorCollection->deleteMany([
                 '$or' => [
                     ['user' => new ObjectId($id)],  // Handles ObjectId format
                     ['user' => $id]                 // Handles string format

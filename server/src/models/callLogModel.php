@@ -11,8 +11,30 @@ class CallLog {
     public $createdAt;
     public $closedAt;
     public $user;
+
+
+    public $images;
+    public $unit;
+    public $description;
+    public $summary;
+    public $updates;
+
+
+
+
     public $vendorInfo;  
     public $vendorNotes;
+
+
+
+
+
+        // TheWeb@trafalgar.co.za
+
+        // unit 
+        // description  limit 30 char
+        // summary 100 char
+        // updates 100 char []
 
     public function __construct(
         $logNumber,
@@ -21,6 +43,13 @@ class CallLog {
         $status = 'Pending',
         ?string $createdAt = null,
         ?string $closedAt = null,
+
+        $images = [],
+        $unit,
+        $description,
+        $summary,
+        $updates = [],
+
         $vendorInfo = [],
         $vendorNotes = []
     ) {
@@ -29,6 +58,20 @@ class CallLog {
         $this->status = in_array($status, ['Pending', 'In Progress', 'Resolved']) ? $status : 'Pending';
         $this->createdAt = $createdAt ? new UTCDateTime(strtotime($createdAt) * 1000) : null;
         $this->closedAt = $closedAt ? new UTCDateTime(strtotime($closedAt) * 1000) : null;
+
+        $this->images = is_array($images) ? $images : [];
+        $this->unit = $unit ?? null;
+        $this->description = $description ?? null;
+        $this->summary = $summary ?? null;
+
+        $this->updates = array_map(function($u) {
+            return array_merge([
+                'updateInfo' => null,
+                'addedAt'    => new UTCDateTime(),
+                'user'       => $u['user'] ?? null
+            ], $u);
+        }, $updates);
+
         $this->user = new ObjectId($user);
         
         $this->vendorInfo = array_merge([

@@ -144,6 +144,9 @@ $callLogRoutes($app);
 $shuttleRoutes = require_once __DIR__ . '/routes/shuttleRoutes.php';
 $shuttleRoutes($app);
 
+$visitorRoutes = require_once __DIR__ . '/routes/visitorRoutes.php';
+$visitorRoutes($app);
+
 $unitRoutes = require_once __DIR__ . '/routes/unitRoutes.php';
 $unitRoutes($app);
 
