@@ -162,5 +162,11 @@ $exportRoutes($app);
 $incidentRoutes = require_once __DIR__ . '/routes/incidentRoutes.php';
 $incidentRoutes($app);
 
+$draftRoutes = require_once __DIR__ . '/routes/draftRoutes.php';
+$draftRoutes($app);
+
+$jotformRoutes = require_once __DIR__ . '/routes/jotformRoutes.php';
+$jotformRoutes($app);
+
 $app->addErrorMiddleware(true, true, true);
 $app->run();

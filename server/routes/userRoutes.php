@@ -25,7 +25,7 @@ return function (App $app) {
 
     $app->post('/api/auth/admin-login', [UserController::class, 'adminLoginController']);
 
-    $app->post('/api/auth/verify-otp', [UserController::class, 'validateOtpController']); // POST OTP
+    // $app->post('/api/auth/verify-otp', [UserController::class, 'validateOtpController']); // POST OTP
 
     $app->post('/api/auth/register', [UserController::class, 'userRegisterController']); // POST REGISTER
     
@@ -54,6 +54,10 @@ return function (App $app) {
     ->add(new AdminAuthorizationMiddleware())
     ->add(new AuthenticationMiddleware());
 
+    $app->post('/api/admin/users/batch', [UserController::class, 'findUsersByIdsController'])
+    ->add(new AdminAuthorizationMiddleware())
+    ->add(new AuthenticationMiddleware());
+
     // Get logged-in users
     $app->get('/api/admin/users/logged-in', [UserController::class, 'findUsersLoggedInController']) // GET FIND->LOGGED-IN->USERS
     ->add(new AdminAuthorizationMiddleware())
@@ -68,4 +72,8 @@ return function (App $app) {
     $app->delete('/api/admin/users/{id}', [UserController::class, 'deleteUserController']) // DELETE DELETE->USER->ID
     ->add(new AdminAuthorizationMiddleware())
     ->add(new AuthenticationMiddleware());
+
+    // For docs ----------------------------------------------------------------------------------------------------
+
+    $app->get('/api/docs/users/{id}', [UserController::class, 'findUserByIdController']); // GET FIND->USER->ID
 };

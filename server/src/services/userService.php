@@ -255,45 +255,44 @@ class UserService
         }
     }
 
-    // public function userLoginService($username, $email, $password)
-    // {
-    //     try {
-    //         $user = $this->userCollection->findOne([
-    //             '$or' => [
-    //                 ['username' => $username],
-    //                 ['email' => $email]
-    //             ]
-    //         ]);
-    //         if (!$user) {
-    //             throw new Exception('User not found');
-    //         }
+    public function userLoginService($username, $email, $password)
+    {
+        try {
+            $user = $this->userCollection->findOne([
+                '$or' => [
+                    ['username' => $username],
+                    ['email' => $email]
+                ]
+            ]);
+            if (!$user) {
+                throw new Exception('User not found');
+            }
 
-    //         if (!password_verify($password, $user['password'])) {
-    //             error_log("Password verification failed for user: " . $user['username']);
-    //             throw new Exception('Invalid password');
-    //         }
+            if (!password_verify($password, $user['password'])) {
+                error_log("Password verification failed for user: " . $user['username']);
+                throw new Exception('Invalid password');
+            }
 
-    //         // GENERATE JWT TOKEN
-    //         $token = JWT::encode(
-    //             [
-    //                 '_id' => (string) $user['_id'],
-    //                 'userType' => $user['userType'],
-    //                 // 'exp' => time() + 86400 // Token expires in 24 hours (86400 seconds)
-    //                 // 'exp' => time() + 60 // Token expires in 60 seconds (1 minute)
-    //                 'exp' => time() + 7200 // Token expires in 2 hours (7200 seconds)
-    //             ],
-    //             $_ENV['JWT_SECRET'],
-    //             'HS256'
-    //         );
+            // GENERATE JWT TOKEN
+            $token = JWT::encode(
+                [
+                    '_id' => (string) $user['_id'],
+                    'userType' => $user['userType'],
+                    'exp' => time() + 86400 // Token expires in 24 hours (86400 seconds)
+                    // 'exp' => time() + 60 // Token expires in 60 seconds (1 minute)
+                    // 'exp' => time() + 7200 // Token expires in 2 hours (7200 seconds)
+                ],
+                $_ENV['JWT_SECRET'],
+                'HS256'
+            );
 
-    //         return $token;
-    //     } catch (Exception $e) {
-    //         error_log("Error in userLoginService: " . $e->getMessage());
-    //         throw $e;
-    //     }
-    // }
+            return $token;
+        } catch (Exception $e) {
+            error_log("Error in userLoginService: " . $e->getMessage());
+            throw $e;
+        }
+    }
 
-    
     public function adminLoginService($username, $email) {
         try {
             $user = $this->userCollection->findOne([
@@ -321,75 +320,77 @@ class UserService
         }
     }
 
-    public function userLoginService($username, $email, $password)
-    {
-        try {
-            $user = $this->userCollection->findOne([
-                '$or' => [
-                    ['username' => $username],
-                    ['email' => $email]
-                ]
-            ]);
-            if (!$user) {
-                throw new Exception('User not found');
-            }
+    // public function userLoginService($username, $email, $password)
+    // {
+    //     try {
+    //         $user = $this->userCollection->findOne([
+    //             '$or' => [
+    //                 ['username' => $username],
+    //                 ['email' => $email]
+    //             ]
+    //         ]);
+    //         if (!$user) {
+    //             throw new Exception('User not found');
+    //         }
 
-            $otpValid = $this->handleOtpCheck($user);
-            if (!$otpValid) {
-                return 'otp_required';
-            }
+    //         $otpValid = $this->handleOtpCheck($user);
+    //         if (!$otpValid) {
+    //             return 'otp_required';
+    //         }
 
-            if (!password_verify($password, $user['password'])) {
-                error_log("Password verification failed for user: " . $user['username']);
-                throw new Exception('Invalid password');
-            }
+    //         if (!password_verify($password, $user['password'])) {
+    //             error_log("Password verification failed for user: " . $user['username']);
+    //             throw new Exception('Invalid password');
+    //         }
 
-            $token = $this->generateJwt($user);
+    //         $token = $this->generateJwt($user);
 
-            $refreshToken = $this->generateJwt($user, 604800);
+    //         $refreshToken = $this->generateJwt($user, 604800);
 
-            return [
-                'user' => $user,
-                'accessToken' => $token,
-                'refreshToken' => $refreshToken
-            ];
-        } catch (Exception $e) {
-            error_log("Error in userLoginService: " . $e->getMessage());
-            throw $e;
-        }
-    }
+    //         return [
+    //             'user' => $user,
+    //             'accessToken' => $token,
+    //             'refreshToken' => $refreshToken
+    //         ];
+    //     } catch (Exception $e) {
+    //         error_log("Error in userLoginService: " . $e->getMessage());
+    //         throw $e;
+    //     }
+    // }
 
-    public function validateOtpCode($userId, $submittedOtp) {
-        $user = $this->userCollection->findOne(['_id' => new ObjectId($userId)]);
-        if (!$user) {
-            throw new Exception('User not found');
-        }
-        $currentOtp   = $user['loginInfo']['currentOtp'] ?? null;
-        $otpExpiresAt = $user['loginInfo']['otpExpiresAt'] ?? null;
+    
+    // public function validateOtpCode($userId, $submittedOtp) {
+    //     $user = $this->userCollection->findOne(['_id' => new ObjectId($userId)]);
+    //     if (!$user) {
+    //         throw new Exception('User not found');
+    //     }
+    //     $currentOtp   = $user['loginInfo']['currentOtp'] ?? null;
+    //     $otpExpiresAt = $user['loginInfo']['otpExpiresAt'] ?? null;
 
-        if (!$currentOtp || !$otpExpiresAt) {
-            throw new Exception('No OTP pending');
-        }
+    //     if (!$currentOtp || !$otpExpiresAt) {
+    //         throw new Exception('No OTP pending');
+    //     }
 
-        if ($otpExpiresAt->toDateTime()->getTimestamp() < time()) {
-            throw new Exception('OTP expired');
-        }
+    //     if ($otpExpiresAt->toDateTime()->getTimestamp() < time()) {
+    //         throw new Exception('OTP expired');
+    //     }
 
-        if ($submittedOtp != $currentOtp) {
-            throw new Exception('Invalid OTP');
-        }
+    //     if ($submittedOtp != $currentOtp) {
+    //         throw new Exception('Invalid OTP');
+    //     }
 
-        $this->userCollection->updateOne(
-            ['_id' => new ObjectId($user['_id'])],
-            ['$set' => [
-                'loginInfo.otpVerifiedAt' => new UTCDateTime(),
-                'loginInfo.currentOtp'    => null,
-                'loginInfo.otpExpiresAt'  => null
-            ]]
-        );
-        return true;
-    }
+    //     $this->userCollection->updateOne(
+    //         ['_id' => new ObjectId($user['_id'])],
+    //         ['$set' => [
+    //             'loginInfo.otpVerifiedAt' => new UTCDateTime(),
+    //             'loginInfo.currentOtp'    => null,
+    //             'loginInfo.otpExpiresAt'  => null
+    //         ]]
+    //     );
+    //     return true;
+    // }
 
+    
     public function userLogoutService($id)
     {
         try {
@@ -553,7 +554,9 @@ class UserService
                     'dateOfBirth' => $this->safeDateFormat($doc['dateOfBirth'] ?? null), // new
                     'age' => $this->calculateAge($doc['dateOfBirth'] ?? null),
                     'rightsType' => $doc['rightsType'] ?? null,
-                    'hasShuttle' => $doc['hasShuttle'] ?? false
+                    'hasShuttle' => $doc['hasShuttle'] ?? false,
+                    'guardianEmail' => $doc['guardianEmail'] ?? null,
+                    'guardianName' => $doc['guardianName'] ?? null
                 ];
 
                 $user['studentInfo'] = isset($doc['studentInfo']) ? [
@@ -568,6 +571,12 @@ class UserService
                     'verificationToken' => $doc['verification']['verificationToken'] ?? null,
                     'verificationTokenExpires' => $doc['verification']['verificationTokenExpires'] ?? null
                 ] : null;
+
+                $user['guardianVerification'] = isset($doc['guardianVerification']) ? [
+                        'isVerified' => $doc['guardianVerification']['isVerified'] ?? false,
+                        'verificationToken' => $doc['guardianVerification']['verificationToken'] ?? null,
+                        'verificationTokenExpires' => $doc['guardianVerification']['verificationTokenExpires'] ?? null
+                    ] : null;
 
                 $user['loginInfo'] = isset($doc['loginInfo']) ? [
                     'lastLogin' => $this->safeDateFormat($doc['loginInfo']['lastLogin'] ?? null),
@@ -606,6 +615,47 @@ class UserService
         }
     }
 
+    public function findUsersByIdsService(array $userIds) {
+        try {
+            // Remove duplicates and empty values
+            $userIds = array_filter(array_unique($userIds));
+            if (empty($userIds)) {
+                return [];
+            }
+
+            $objectIds = array_map(fn($id) => new ObjectId($id), $userIds);
+            $users = $this->userCollection->find(['_id' => ['$in' => $objectIds]]);
+            
+            $results = [];
+            foreach ($users as $user) {
+                $results[(string) $user['_id']] = [
+                    'userId' => (string) $user['_id'],
+                    'username' => $user['username'] ?? null,
+                    'userFirstName' => $user['firstName'] ?? null,
+                    'userLastName' => $user['lastName'] ?? null,
+                    'userEmail' => $user['email'] ?? null,
+                    'userPhone' => $user['phone'] ?? null,
+                    'userVerification' => isset($user['verification']) ? [
+                        'isVerified' => $user['verification']['isVerified'] ?? false,
+                        'verificationToken' => $user['verification']['verificationToken'] ?? null,
+                        'verificationTokenExpires' => $user['verification']['verificationTokenExpires'] ?? null
+                    ] : null,
+                    'userDocuments' => isset($user['documents']) ? array_map(function ($document) {
+                        return [
+                            'documentUrl' => $document['documentUrl'] ?? null,
+                            'fileId' => $document['fileId'] ?? null,
+                            'uploadDate' => $this->safeDateFormat($document['uploadDate'] ?? null),
+                            '_id' => isset($document['_id']) ? (string) $document['_id'] : null
+                        ];
+                    }, $user['documents']->getArrayCopy()) : []
+                ];
+            }
+            return $results;
+        } catch (Exception $e) {
+            error_log('Error in findUsersByIdsService: ' . $e->getMessage());
+            throw $e;
+        }
+    }
 
     public function updateUserService($id, $userDetails)
     {
@@ -633,6 +683,10 @@ class UserService
             // Check if email is being updated
             $isEmailUpdated = isset($userDetails['email']) && $userDetails['email'] !== $currentUser['email'];
 
+            $isGuardianEmailUpdated = isset($userDetails['guardianEmail'])
+                && !empty($userDetails['guardianEmail'])
+                && $userDetails['guardianEmail'] !== ($currentUser['guardianEmail'] ?? null);
+
             // Update user details
             $this->userCollection->updateOne(
                 ['_id' => new ObjectId($id)],
@@ -652,6 +706,23 @@ class UserService
                         ]
                     ]
                 );
+            }
+
+            if ($isGuardianEmailUpdated) {
+                $guardianVerificationToken = JWT::encode(['userId' => (string) $currentUser['_id'], 'type' => 'guardian'], $_ENV['JWT_SECRET'], 'HS256');
+                $this->userCollection->updateOne(
+                    ['_id' => new ObjectId($id)],
+                    [
+                        '$set' => [
+                            'guardianVerification.isVerified' => false,
+                            'guardianVerification.verificationToken' => $guardianVerificationToken,
+                            'guardianVerification.verificationTokenExpires' => new UTCDateTime(time() * 1000 + 3600000) // 1 hour
+                        ]
+                    ]
+                );
+
+                // $updatedUser = $this->userCollection->findOne(['_id' => new ObjectId($id)]);
+                // $this->emailService->verifyEmail($updatedUser, 'guardian');
             }
 
             // Recalculate and save age if dateOfBirth was updated

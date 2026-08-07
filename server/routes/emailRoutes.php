@@ -16,7 +16,7 @@ return function (App $app) {
 
     $app->post('/api/contact', [SendEmailCOntroller::class, 'getInContactController']);
 
-    $app->post('/api/user-request/{id}', [SendEmailCOntroller::class, 'sendUserRequestController']);
+    // $app->post('/api/user-request/{id}', [SendEmailCOntroller::class, 'sendUserRequestController']);
 
     $app->post('/api/approved-rental', [SendEmailCOntroller::class, 'rentalNotifcationController']);
 
@@ -37,4 +37,6 @@ return function (App $app) {
 
     // NEW FUNCTION - ADD TO EXPRESS
     $app->post('/api/send-vendor-email', [SendEmailCOntroller::class, 'sendVendorController']);
+
+    $app->post('/api/send-lease-link', [SendEmailCOntroller::class, 'sendLeaseLinkController']);
 };

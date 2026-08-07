@@ -25,6 +25,11 @@ return function (App $app) {
     $app->delete('/api/rentals/{id}', [RentalController::class, 'deleteRentalController']) // DELETE DELETE->RENTAL->ID
     ->add(new AuthenticationMiddleware());
 
+    $app->post('/api/rentals/{id}/documents', [RentalController::class, 'uploadRentalDocsController']);
+
+    $app->delete('/api/rentals/{id}/documents', [RentalController::class, 'clearAllRentalDocsController'])
+    ->add(new AuthenticationMiddleware());
+
     // Protected routes -----------------------------------------------
 
     $app->get('/api/admin/rentals', [RentalController::class, 'findAllRentalsController']) // GET FINDALL->RENTALS
@@ -45,4 +50,12 @@ return function (App $app) {
     $app->put('/api/admin/rentals/{id}/end', [RentalController::class, 'earlyEndRentalController']) // PUT UPDATE->RENTAL->ID
     ->add(new AdminAuthorizationMiddleware())
     ->add(new AuthenticationMiddleware());
+
+    // For docs ----------------------------------------------------------------------------------------------------
+
+    $app->get('/api/docs/users/{id}/rentals', [RentalController::class, 'findAllMyRentalsController']); // GET FINDALL->RENTALS->USER
+
+    // Public endpoints (no auth)
+    $app->post('/api/auth/validate-signer', [RentalController::class, 'validateSignerTokenController']);
+    $app->post('/api/auth/verify-signer-email', [RentalController::class, 'verifySignerEmailController']);
 };

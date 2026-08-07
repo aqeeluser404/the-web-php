@@ -27,6 +27,12 @@ class User {
     public $shuttles;
     public $hasShuttle;
 
+
+
+    public $guardianEmail;
+    public $guardianVerification;
+    public $guardianName; 
+
     public function __construct(
         $firstName,
         $lastName,
@@ -47,7 +53,11 @@ class User {
         $documents = [],
         $shuttles = [],
         $rightsType = null,
-        $hasShuttle = false
+        $hasShuttle = false,
+
+        $guardianEmail = null, 
+        $guardianVerification = [],
+        $guardianName = null  
     ) {
         $this->firstName = $firstName;
         $this->lastName = $lastName;
@@ -62,6 +72,9 @@ class User {
         $this->dateCreated = new UTCDateTime();
         $this->rightsType = $rightsType; 
         $this->hasShuttle = $hasShuttle;
+
+        $this->guardianEmail = $guardianEmail;
+        $this->guardianName = $guardianName;
 
         // Nested Fields ----------------------------------------------------------------
         
@@ -79,6 +92,12 @@ class User {
             'verificationToken' => null,
             'verificationTokenExpires' => null
         ], $verification);
+
+        $this->guardianVerification = array_merge([
+            'isVerified' => false,
+            'verificationToken' => null,
+            'verificationTokenExpires' => null
+        ], $guardianVerification);
 
         // Forgot Password
         $this->forgotPassword = array_merge([

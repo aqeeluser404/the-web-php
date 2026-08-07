@@ -29,6 +29,11 @@ class Unit
     public $unitPrice;
 
     /** 
+     * @var int The year this unit is available for (e.g., 2026, 2027)
+     */
+    public $unitYear;
+
+    /** 
      * @var array<array{type: string, roomType?: string, bedType?: string, price: float}> 
      * Optional nested rooms or beds
      */
@@ -75,7 +80,7 @@ class Unit
         int $unitOccupants,
         string $unitDescription,
         float $unitPrice,
-
+        int $unitYear,
         array $subUnits = [],
 
         string $unitStatus = 'Available',
@@ -100,6 +105,7 @@ class Unit
         $this->currentOccupants = $currentOccupants;
         $this->unitDescription = $unitDescription;
         $this->unitPrice = $unitPrice;
+        $this->unitYear = $unitYear;
 
         // $this->subUnits = array_map(function($subUnit) {
         //     return [
@@ -181,6 +187,7 @@ class Unit
             'currentOccupants' => $this->currentOccupants,
             'unitDescription' => $this->unitDescription,
             'unitPrice' => $this->unitPrice,
+            'unitYear' => $this->unitYear,
             'subUnits' => $this->subUnits,
             'unitStatus' => $this->unitStatus,
             'images' => $this->images,

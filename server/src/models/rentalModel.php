@@ -47,11 +47,34 @@ class Rental {
     /** @var array{selected: bool, fee: float} */
     public $parking;
 
+    /** @var array{selected: bool, fee: float} */
+    public $shuttle;
+
     /** @var array{imageUrl: string, fileId: string, _id: ObjectId}|null */
     public $guardianSignature;
 
      /** @var array{imageUrl: string, fileId: string, _id: ObjectId}|null */
     public $signature;
+
+    /** 
+     * @var array<int, array{documentUrl: string, fileId: string, uploadDate: UTCDateTime, docType: string, _id: ObjectId}> 
+     */
+    public $documents;
+    
+    /** 
+     * @var array|null Signing tokens for tenant and guardian 
+     */
+    public $signingTokens = null;
+
+    /** 
+     * @var string|null Optional Trafalgar ID for the rental 
+     */
+    public $trafalgarId = null;
+
+    /** 
+     * @var int|null Optional Unit Year for the rental 
+     */
+    public $unitYear = null;
 
     public function __construct(
         float $rentalPrice,
@@ -66,8 +89,13 @@ class Rental {
         ?string $earlyEndDate = null,
         array $payerData = [],
         ?array $parking = null,
+        ?array $shuttle = null,
         ?array $signature = null,
-        ?array $guardianSignature = null
+        ?array $guardianSignature = null,
+        ?array $documents = null,
+        ?array $signingTokens = null,
+        ?string $trafalgarId = null,
+        ?int $unitYear = null,
     ) {
         $this->applicationDate = new UTCDateTime();
         $this->status = in_array($status, ['Pending', 'Rejected', 'Active', 'Ended']) ? $status : 'Pending';
@@ -80,6 +108,8 @@ class Rental {
         $this->selectedSubUnits = $selectedSubUnits;
         $this->user = new ObjectId($user);
         $this->accessKey = $accessKey;
+        $this->trafalgarId = $trafalgarId;
+        $this->unitYear = $unitYear;
 
         // Ensure payerData has default values in the correct order
         $this->payerData = array_merge([
@@ -99,6 +129,11 @@ class Rental {
             'fee' => 50.0 // Placeholder fee
         ], $parking ?? []);
 
+        $this->shuttle = array_merge([
+            'hasShuttle' => false,
+            'fee' => 50.0 // Placeholder fee
+        ], $shuttle ?? []);
+
         // $this->signature = array_merge([
         //     'imageUrl' => $image['imageUrl'] ?? '',
         //     'fileId' => $image['fileId'] ?? '',
@@ -116,10 +151,21 @@ class Rental {
             'fileId' => $guardianSignature['fileId'] ?? '',
             '_id' => $guardianSignature['_id'] ?? new ObjectId()
         ] : null;
+
+        $this->documents = array_map(function($doc) {
+            return array_merge([
+                'documentUrl' => null,
+                'fileId'      => null,
+                'uploadDate'  => new UTCDateTime(),
+                'docType'     => null, 
+            ], $doc);
+        }, $documents ?? []);
+
+        $this->signingTokens = $signingTokens;
     }
 
     public function toArray(): array {
-        return [
+        $array = [
             'applicationDate' => $this->applicationDate,
             'status' => $this->status,
             'rentalStartDate' => $this->rentalStartDate,
@@ -133,8 +179,27 @@ class Rental {
             'user' => $this->user,
             'accessKey' => $this->accessKey,
             'parking' => $this->parking,
+            'shuttle' => $this->shuttle,
             'signature' => $this->signature,
             'guardianSignature' => $this->guardianSignature
         ];
+    
+        if (!empty($this->documents)) {
+            $array['documents'] = $this->documents;
+        }
+    
+        if (!empty($this->signingTokens)) {
+            $array['signingTokens'] = $this->signingTokens;
+        }
+    
+        if ($this->trafalgarId !== null) {
+            $array['trafalgarId'] = $this->trafalgarId;
+        }
+    
+        if ($this->unitYear !== null) {
+            $array['unitYear'] = $this->unitYear;
+        }
+    
+        return $array;
     }
 }

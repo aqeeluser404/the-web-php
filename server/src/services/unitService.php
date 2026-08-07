@@ -128,21 +128,21 @@ class UnitService
                 ? $unit['subUnits']->getArrayCopy()
                 : (array) $unit['subUnits'];
         
-    foreach ($subUnitsArray as $subUnit) {
-        if ($subUnit instanceof \MongoDB\Model\BSONDocument) {
-            $subUnit = $subUnit->getArrayCopy();
-        }
+            foreach ($subUnitsArray as $subUnit) {
+                if ($subUnit instanceof \MongoDB\Model\BSONDocument) {
+                    $subUnit = $subUnit->getArrayCopy();
+                }
 
-        $val = $subUnit['isAvailable'] ?? null;
+                $val = $subUnit['isAvailable'] ?? null;
 
-        // Normalize to boolean
-        $isAvailable = filter_var($val, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+                // Normalize to boolean
+                $isAvailable = filter_var($val, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
 
-        // If it's explicitly false (boolean false, "false", 0), count as occupied
-        if ($isAvailable === false) {
-            $occupiedCount++;
-        }
-    }
+                // If it's explicitly false (boolean false, "false", 0), count as occupied
+                if ($isAvailable === false) {
+                    $occupiedCount++;
+                }
+            }
         } else {
             $occupiedCount = $unit['currentOccupants'] ?? 0;
             error_log("WARNING: Unit {$unit['unitNumber']} has no subUnits array, keeping currentOccupants = {$occupiedCount}");
@@ -244,12 +244,93 @@ class UnitService
             }
         }
 
+        if (!isset($unit['unitYear']) || $unit['unitYear'] === null) {
+            $updateData['unitYear'] = 2026;
+            error_log("Added unitYear = 2026 to unit: {$unit['unitNumber']}");
+        }
+
         // Apply update - only include fields that are set
         if (!empty($updateData)) {
             $this->unitCollection->updateOne(
                 ['_id' => new ObjectId($unit['_id'])],
                 ['$set' => $updateData]
             );
+        }
+
+        // $this->fixRentalDatesTo2026();
+    }
+
+    protected function fixRentalDatesTo2026()
+    {
+        try {
+            // Find rentals with 2027 dates
+            $rentalsToFix = $this->rentalCollection->find([
+                '$or' => [
+                    ['rentalStartDate' => [
+                        '$gte' => new UTCDateTime(strtotime('2027-01-01') * 1000),
+                        '$lt' => new UTCDateTime(strtotime('2028-01-01') * 1000)
+                    ]],
+                    ['rentalEndDate' => [
+                        '$gte' => new UTCDateTime(strtotime('2027-01-01') * 1000),
+                        '$lt' => new UTCDateTime(strtotime('2028-01-01') * 1000)
+                    ]]
+                ]
+            ]);
+
+            $fixedCount = 0;
+
+            foreach ($rentalsToFix as $rental) {
+                try {
+                    $rentalId = (string) $rental['_id'];
+                    $updateData = [];
+
+                    // Fix start date: keep month/day, change year to 2026
+                    if (isset($rental['rentalStartDate'])) {
+                        $date = $rental['rentalStartDate']->toDateTime();
+                        $year = (int) $date->format('Y');
+                        
+                        if ($year === 2027) {
+                            $month = $date->format('m');
+                            $day = $date->format('d');
+                            
+                            $newDate = new DateTime("2026-{$month}-{$day}");
+                            $updateData['rentalStartDate'] = new UTCDateTime($newDate->getTimestamp() * 1000);
+                        }
+                    }
+
+                    // Fix end date: keep month/day, change year to 2026
+                    if (isset($rental['rentalEndDate'])) {
+                        $date = $rental['rentalEndDate']->toDateTime();
+                        $year = (int) $date->format('Y');
+                        
+                        if ($year === 2027) {
+                            $month = $date->format('m');
+                            $day = $date->format('d');
+                            
+                            $newDate = new DateTime("2026-{$month}-{$day}");
+                            $updateData['rentalEndDate'] = new UTCDateTime($newDate->getTimestamp() * 1000);
+                        }
+                    }
+
+                    // Apply updates if any
+                    if (!empty($updateData)) {
+                        $this->rentalCollection->updateOne(
+                            ['_id' => $rental['_id']],
+                            ['$set' => $updateData]
+                        );
+                        $fixedCount++;
+                        error_log("Fixed rental {$rentalId} dates to 2026");
+                    }
+
+                } catch (Exception $e) {
+                    error_log("Failed to fix rental {$rentalId}: " . $e->getMessage());
+                }
+            }
+
+            error_log("Fixed {$fixedCount} rentals to 2026");
+
+        } catch (Exception $e) {
+            error_log("Error in fixRentalDatesTo2026: " . $e->getMessage());
         }
     }
 
@@ -498,12 +579,19 @@ class UnitService
             if (!empty($unitDetails['subUnits']) && is_string($unitDetails['subUnits'])) {
                 $unitDetails['subUnits'] = json_decode($unitDetails['subUnits'], true);
             }
-            // Check if the unit already exists
-            if ($this->unitCollection->findOne(['unitNumber' => $unitDetails['unitNumber']])) {
-                throw new Exception('Unit already exists');
+
+            $unitYear = isset($unitDetails['unitYear']) && is_numeric($unitDetails['unitYear'])
+                ? (int) $unitDetails['unitYear']
+                : 2026;
+            $unitDetails['unitYear'] = $unitYear;
+
+            if ($this->unitCollection->findOne([
+                'unitNumber' => $unitDetails['unitNumber'],
+                'unitYear' => $unitYear
+            ])) {
+                throw new Exception('Unit already exists for this year');
             }
 
-            // Process images
             $imageData = array_map(function ($file) {
                 if ($file->getError() !== UPLOAD_ERR_OK) {
                     throw new Exception('Invalid image upload');
@@ -619,6 +707,7 @@ class UnitService
                 unitOccupants: $unitDetails['unitOccupants'],
                 unitDescription: $unitDetails['unitDescription'],
                 unitPrice: $unitDetails['unitPrice'],
+                unitYear: $unitDetails['unitYear'] ?? null,
                 subUnits: $subUnits,
                 unitStatus: 'Available',
                 genderAssignment: $unitDetails['genderAssignment'] ?? null,
@@ -640,6 +729,7 @@ class UnitService
             throw $e;
         }
     }
+
     public function findUnitByIdService($unitId)
     {
         try {
@@ -674,6 +764,7 @@ class UnitService
                     'currentOccupants' => $doc['currentOccupants'] ?? null,
                     'unitDescription' => $doc['unitDescription'] ?? null,
                     'unitPrice' => $doc['unitPrice'] ?? null,
+                    'unitYear' => $doc['unitYear'] ?? null,
                     'unitStatus' => $doc['unitStatus'] ?? null,
                     'dateCreated' => $this->safeDateFormat($doc['dateCreated'] ?? null),
                     'genderAssignment' => $doc['genderAssignment'] ?? null,
@@ -1026,6 +1117,7 @@ class UnitService
                 'unitOccupants' => $unitOccupants,
                 'unitDescription' => (string) ($unitDetails['unitDescription'] ?? $unit['unitDescription']),
                 'unitPrice' => (float) ($unitDetails['unitPrice'] ?? $unit['unitPrice']),
+                'unitYear' => isset($unitDetails['unitYear']) ? (int) $unitDetails['unitYear'] : ($unit['unitYear'] ?? null),
                 'genderAssignment' => $unitDetails['genderAssignment'] ?? $unit['genderAssignment'] ?? null,
                 'images' => !empty($imageData) ? $imageData : ($unit['images'] ?? []),
                 'subUnits' => $normalizedSubUnits
@@ -1046,7 +1138,6 @@ class UnitService
             throw $e;
         }
     }
-
 
     public function deleteUnitService(string $unitId): bool
     {
