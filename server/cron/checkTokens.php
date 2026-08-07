@@ -49,47 +49,6 @@ class TokenChecker {
         // logMessage("Database connection initialized.");
     }
 
-    // public function checkTokens() {
-    //     logMessage("======= USER LOGIN CHECK STARTED =======");
-
-    //     $users = $this->userModel->find(['loginInfo.isLoggedIn' => true]);
-
-    //     if (empty($users)) {
-    //         logMessage("No logged-in users found.");
-    //         logMessage("======= USER LOGIN CHECK COMPLETED =======");
-    //         return;
-    //     }
-
-    //     foreach ($users as $user) {
-    //         logMessage("Processing user ID: {$user['_id']}");
-    //         $token = $user['loginInfo']['loginToken'] ?? "No token found";
-    //         logMessage("User Token: {$token}");
-
-    //         if ($token && $token !== "No token found") {
-    //             try {
-    //                 JWT::decode($token, new Key($_ENV['JWT_SECRET'], 'HS256'));
-    //                 logMessage("✅ Token for user {$user['_id']} is VALID.");
-    //             } catch (Exception $e) {
-    //                 logMessage("❌ Token for user {$user['_id']} is INVALID or EXPIRED: " . $e->getMessage());
-
-    //                 if ($e instanceof \Firebase\JWT\ExpiredException) {
-    //                     $this->userModel->updateOne(
-    //                         ['_id' => $user['_id']],
-    //                         ['$set' => ['loginInfo.isLoggedIn' => false, 'loginInfo.loginToken' => null]]
-    //                     );
-    //                     logMessage("🔴 User {$user['_id']} logged out due to expired token.");
-    //                     $this->callLogoutEndpoint($user['_id']);
-    //                 }
-    //             }
-    //         }
-
-    //         logMessage("---------------------------------");
-    //     }
-
-    //     logMessage("======= USER LOGIN CHECK COMPLETED =======");
-    //     $this->checkRentalsToEnd();
-    // }
-
     public function checkTokens() {
         logMessage("======= USER LOGIN CHECK STARTED =======");
 
@@ -111,16 +70,16 @@ class TokenChecker {
             if ($token && $token !== "No token found") {
                 try {
                     JWT::decode($token, new Key($_ENV['JWT_SECRET'], 'HS256'));
-                    logMessage("✅ Token for user {$user['_id']} is VALID.");
+                    logMessage("Token for user {$user['_id']} is VALID.");
                 } catch (Exception $e) {
-                    logMessage("❌ Token for user {$user['_id']} is INVALID or EXPIRED: " . $e->getMessage());
+                    logMessage("Token for user {$user['_id']} is INVALID or EXPIRED: " . $e->getMessage());
 
                     if ($e instanceof \Firebase\JWT\ExpiredException) {
                         $this->userModel->updateOne(
                             ['_id' => $user['_id']],
                             ['$set' => ['loginInfo.isLoggedIn' => false, 'loginInfo.loginToken' => null]]
                         );
-                        logMessage("🔴 User {$user['_id']} logged out due to expired token.");
+                        logMessage("User {$user['_id']} logged out due to expired token.");
                         $this->callLogoutEndpoint($user['_id']);
                     }
                 }
@@ -129,9 +88,9 @@ class TokenChecker {
             if ($refreshToken) {
                 try {
                     JWT::decode($refreshToken, new Key($_ENV['JWT_SECRET'], 'HS256'));
-                    logMessage("✅ Refresh token for user {$user['_id']} is VALID.");
+                    logMessage("Refresh token for user {$user['_id']} is VALID.");
                 } catch (Exception $e) {
-                    logMessage("❌ Refresh token for user {$user['_id']} is INVALID or EXPIRED: " . $e->getMessage());
+                    logMessage("Refresh token for user {$user['_id']} is INVALID or EXPIRED: " . $e->getMessage());
                     if ($e instanceof \Firebase\JWT\ExpiredException) {
                         $this->userModel->updateOne(
                             ['_id' => $user['_id']],
@@ -141,7 +100,7 @@ class TokenChecker {
                                 'loginInfo.refreshToken' => null
                             ]]
                         );
-                        logMessage("🔴 User {$user['_id']} logged out due to expired refresh token.");
+                        logMessage("User {$user['_id']} logged out due to expired refresh token.");
                         $this->callLogoutEndpoint($user['_id']);
                     }
                 }
@@ -198,7 +157,7 @@ class TokenChecker {
                         $rentalsToEnd[] = $rental;
                     }
                 } catch (Exception $e) {
-                    logMessage("⚠️ Skipped rental {$rental['_id']} due to invalid date format: {$rental['rentalEndDate']}");
+                    logMessage("Skipped rental {$rental['_id']} due to invalid date format: {$rental['rentalEndDate']}");
                 }
             }
 
@@ -226,9 +185,9 @@ class TokenChecker {
                 try {
                     logMessage("Attempting to end rental...");
                     $result = $this->rentalService->endRentalService($rentalId);
-                    logMessage("✅ Rental ended successfully. Result: " . json_encode($result));
+                    logMessage("Rental ended successfully. Result: " . json_encode($result));
                 } catch (Exception $e) {
-                    logMessage("❌ ERROR ending rental: " . $e->getMessage());
+                    logMessage("ERROR ending rental: " . $e->getMessage());
                     continue;
                 }
 
@@ -238,7 +197,7 @@ class TokenChecker {
             logMessage("========== RENTAL CHECK COMPLETED ==========");
             logMessage(PHP_EOL . PHP_EOL);
         } catch (Exception $e) {
-            logMessage("🚨 CRITICAL ERROR IN RENTAL CHECK: " . $e->getMessage());
+            logMessage("CRITICAL ERROR IN RENTAL CHECK: " . $e->getMessage());
             logMessage("========== RENTAL CHECK FAILED ==========");
             logMessage(PHP_EOL . PHP_EOL);
         }
