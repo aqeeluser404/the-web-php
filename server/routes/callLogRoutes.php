@@ -30,4 +30,6 @@ return function (App $app) {
     $app->put('/api/call-log/{id}', [CallLogController::class, 'updateCallLogStatusController']) // PUT UPDATE->CALL-LOG->ID
         ->add(new AuthenticationMiddleware());
 
+    $app->put('/api/call-log/{id}/delete-update', [CallLogController::class, 'deleteCallLogUpdateController'])
+        ->add(new AuthenticationMiddleware());
 };

@@ -129,67 +129,67 @@ class CallLogController {
         }
     }
 
-    // public function updateCallLogStatusController($req, $res) {
-    //     try {
-    //         $id = $req->getAttribute('id');
-    //         $callLogDetails = $req->getParsedBody();
-
-    //         $updatedCallLog = $this->callLogService->updateCallLogService($id, $callLogDetails);
-            
-    //         return $this->respond($res,  $updatedCallLog, 200);
-    //     } catch (Exception $e) {
-    //         return $this->respond($res, [
-    //             'error' => $e->getMessage()
-    //         ], 404);
-    //     }
-    // }
-
     public function updateCallLogStatusController($req, $res) {
         try {
             $id = $req->getAttribute('id');
             $callLogDetails = $req->getParsedBody();
 
-            $uploadedFiles = []; // MANUALLY PROCESS UPLOADED FILES
-
-            if (!empty($_FILES['images']['name'][0])) { // Multiple files
-                foreach ($_FILES['images']['name'] as $index => $name) {
-                    if ($_FILES['images']['error'][$index] === UPLOAD_ERR_OK) {
-                        $uploadedFiles[] = new UploadedFile(
-                            $_FILES['images']['tmp_name'][$index],
-                            $name,
-                            $_FILES['images']['type'][$index],
-                            $_FILES['images']['size'][$index],
-                            $_FILES['images']['error'][$index]
-                        );
-                    }
-                }
-            } elseif (!empty($_FILES['images']['name'])) { // Single file
-                if ($_FILES['images']['error'] === UPLOAD_ERR_OK) {
-                    $uploadedFiles[] = new UploadedFile(
-                        $_FILES['images']['tmp_name'],
-                        $_FILES['images']['name'],
-                        $_FILES['images']['type'],
-                        $_FILES['images']['size'],
-                        $_FILES['images']['error']
-                    );
-                }
-            }
-
-            // Pass both details and images to the service
-            $updatedCallLog = $this->callLogService->updateCallLogService(
-                $id,
-                $callLogDetails,
-                ['images' => $uploadedFiles]
-            );
-
-            return $this->respond($res, $updatedCallLog, 200);
+            $updatedCallLog = $this->callLogService->updateCallLogService($id, $callLogDetails);
+            
+            return $this->respond($res,  $updatedCallLog, 200);
         } catch (Exception $e) {
-            error_log('Controller error: ' . $e->getMessage());
             return $this->respond($res, [
                 'error' => $e->getMessage()
-            ], 400);
+            ], 404);
         }
     }
+
+    // public function updateCallLogStatusController($req, $res) {
+    //     try {
+    //         $id = $req->getAttribute('id');
+    //         $callLogDetails = $req->getParsedBody();
+
+    //         $uploadedFiles = []; // MANUALLY PROCESS UPLOADED FILES
+
+    //         if (!empty($_FILES['images']['name'][0])) { // Multiple files
+    //             foreach ($_FILES['images']['name'] as $index => $name) {
+    //                 if ($_FILES['images']['error'][$index] === UPLOAD_ERR_OK) {
+    //                     $uploadedFiles[] = new UploadedFile(
+    //                         $_FILES['images']['tmp_name'][$index],
+    //                         $name,
+    //                         $_FILES['images']['type'][$index],
+    //                         $_FILES['images']['size'][$index],
+    //                         $_FILES['images']['error'][$index]
+    //                     );
+    //                 }
+    //             }
+    //         } elseif (!empty($_FILES['images']['name'])) { // Single file
+    //             if ($_FILES['images']['error'] === UPLOAD_ERR_OK) {
+    //                 $uploadedFiles[] = new UploadedFile(
+    //                     $_FILES['images']['tmp_name'],
+    //                     $_FILES['images']['name'],
+    //                     $_FILES['images']['type'],
+    //                     $_FILES['images']['size'],
+    //                     $_FILES['images']['error']
+    //                 );
+    //             }
+    //         }
+
+    //         // Pass both details and images to the service
+    //         $updatedCallLog = $this->callLogService->updateCallLogService(
+    //             $id,
+    //             $callLogDetails,
+    //             ['images' => $uploadedFiles]
+    //         );
+
+    //         return $this->respond($res, $updatedCallLog, 200);
+    //     } catch (Exception $e) {
+    //         error_log('Controller error: ' . $e->getMessage());
+    //         return $this->respond($res, [
+    //             'error' => $e->getMessage()
+    //         ], 400);
+    //     }
+    // }
 
     public function deleteCallLogController($req, $res) {
         try {
@@ -202,4 +202,22 @@ class CallLogController {
             ], 404);
         }
     }
+    
+public function deleteCallLogUpdateController($req, $res) {
+    try {
+        $id = $req->getAttribute('id');
+        $body = $req->getParsedBody();
+        $updateInfo = $body['updateInfo'] ?? null;
+        $addedAt = $body['addedAt'] ?? null;
+
+        if (!$updateInfo || !$addedAt) {
+            throw new Exception('updateInfo and addedAt are required');
+        }
+
+        $updatedCallLog = $this->callLogService->deleteCallLogUpdateService($id, $updateInfo, $addedAt);
+        return $this->respond($res, $updatedCallLog, 200);
+    } catch (Exception $e) {
+        return $this->respond($res, ['error' => $e->getMessage()], 404);
+    }
+}
 }
