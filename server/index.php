@@ -30,10 +30,7 @@ $app->add(new MongoResponseMiddleware());
 // cpanel setup ----------------------------------------------------------------
 
 // Set the base path use for cpanel hosting
-$app->setBasePath('/backend/server');
-
-// cd into server before serving this
-// $app->setBasePath('');
+$app->setBasePath($_ENV['BASE_PATH'] ?? '');
 
 // cors setup -----------------------------------------------------------------
 
