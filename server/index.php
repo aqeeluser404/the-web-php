@@ -37,12 +37,7 @@ $app->setBasePath('/backend/server');
 
 // cors setup -----------------------------------------------------------------
 
-$allowedOrigins = array_filter([
-    $_ENV['HOST_LINK_0'] ?? null,
-    $_ENV['HOST_LINK_1'] ?? null,
-    $_ENV['HOST_LINK_2'] ?? null
-]);
-
+$allowedOrigins = [$_ENV['HOST_LINK_0'], $_ENV['HOST_LINK_1'], $_ENV['HOST_LINK_2']];
 $app->add(function ($request, $handler) use ($allowedOrigins) {
 
     if ($request->getMethod() === 'OPTIONS') {

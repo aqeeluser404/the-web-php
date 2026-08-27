@@ -44,17 +44,17 @@ class ApplicationDraftService
             if (!$userId) {
                 throw new Exception('User ID is required');
             }
-
+    
             $user = $this->userCollection->findOne(['_id' => new ObjectId($userId)]);
             if (!$user) {
                 throw new Exception('User not found');
             }
-
+    
             $existingDraft = $this->applicationDraftCollection->findOne([
                 'userId' => new ObjectId($userId),
                 'status' => 'draft'
             ]);
-
+    
             // Build draft array directly (no model class)
             $draftArray = [
                 'userId' => new ObjectId($userId),
@@ -71,40 +71,40 @@ class ApplicationDraftService
                 'signatures' => $data['signatures'] ?? [],
                 'file' => $data['file'] ?? null
             ];
-
+    
             if ($existingDraft) {
                 $draftArray['updatedAt'] = new UTCDateTime();
                 unset($draftArray['createdAt']);
-
+    
                 $updateResult = $this->applicationDraftCollection->updateOne(
                     ['_id' => $existingDraft['_id']],
                     ['$set' => $draftArray]
                 );
-
+    
                 if ($updateResult->getModifiedCount() === 0) {
                     throw new Exception('Failed to update draft');
                 }
-
+    
                 $draftId = (string) $existingDraft['_id'];
                 $message = 'Draft updated successfully';
             } else {
                 $insertResult = $this->applicationDraftCollection->insertOne($draftArray);
-
+    
                 if ($insertResult->getInsertedCount() === 0) {
                     throw new Exception('Failed to save draft');
                 }
-
+    
                 $draftId = (string) $insertResult->getInsertedId();
                 $message = 'Draft saved successfully';
             }
-
+    
             return [
                 'success' => true,
                 'draftId' => $draftId,
                 'message' => $message,
                 'updatedAt' => $this->safeDateFormat(new UTCDateTime())
             ];
-
+    
         } catch (Exception $e) {
             error_log('Save application draft error: ' . $e->getMessage());
             throw new Exception('Failed to save draft: ' . $e->getMessage());
@@ -148,7 +148,7 @@ class ApplicationDraftService
             throw new Exception('Failed to get draft: ' . $e->getMessage());
         }
     }
-
+    
     public function getAllDraftsService()
     {
         try {
@@ -213,6 +213,4 @@ class ApplicationDraftService
             throw new Exception('Failed to delete draft: ' . $e->getMessage());
         }
     }
-
-
 }

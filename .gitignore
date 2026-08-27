@@ -3,3 +3,5 @@ vendor
 composer.lock
 keys
 tests
+server/cron/*
+!server/cron/checkTokens.php

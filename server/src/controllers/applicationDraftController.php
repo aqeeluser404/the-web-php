@@ -58,7 +58,7 @@ class ApplicationDraftController {
             ], 500);
         }
     }
-
+    
     public function getAllDraftsController($req, $res) {
         try {
             $result = $this->applicationDraftService->getAllDraftsService();

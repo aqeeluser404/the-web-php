@@ -53,7 +53,7 @@ return function (App $app) {
     $app->get('/api/admin/users', [UserController::class, 'findAllUsersController']) // GET FIND->ALL->USERS
     ->add(new AdminAuthorizationMiddleware())
     ->add(new AuthenticationMiddleware());
-
+    
     $app->post('/api/admin/users/batch', [UserController::class, 'findUsersByIdsController'])
     ->add(new AdminAuthorizationMiddleware())
     ->add(new AuthenticationMiddleware());
@@ -72,7 +72,7 @@ return function (App $app) {
     $app->delete('/api/admin/users/{id}', [UserController::class, 'deleteUserController']) // DELETE DELETE->USER->ID
     ->add(new AdminAuthorizationMiddleware())
     ->add(new AuthenticationMiddleware());
-
+    
     // For docs ----------------------------------------------------------------------------------------------------
 
     $app->get('/api/docs/users/{id}', [UserController::class, 'findUserByIdController']); // GET FIND->USER->ID

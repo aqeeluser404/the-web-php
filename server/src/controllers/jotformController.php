@@ -26,7 +26,6 @@ class JotformController
     private $appBaseUrl;
     private $client;
     private $rentalCollection;
-    private $userCollection;
     private $localFileHelper;
 
     public function __construct()
@@ -43,7 +42,6 @@ class JotformController
 
         $db = Database::getDb();
         $this->rentalCollection = $db->Rental;
-        $this->userCollection = $db->User;
         $this->localFileHelper = new LocalFileHelper();
     }
 

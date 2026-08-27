@@ -14,9 +14,6 @@ class Visitor {
     public $status;
     public $user;
 
-
-
-
     public function __construct(
         $visitorNumber,
         $firstName,

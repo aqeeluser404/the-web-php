@@ -46,7 +46,7 @@ class Rental {
 
     /** @var array{selected: bool, fee: float} */
     public $parking;
-
+    
     /** @var array{selected: bool, fee: float} */
     public $shuttle;
 
@@ -65,12 +65,12 @@ class Rental {
      * @var array|null Signing tokens for tenant and guardian 
      */
     public $signingTokens = null;
-
+    
     /** 
      * @var string|null Optional Trafalgar ID for the rental 
      */
     public $trafalgarId = null;
-
+    
     /** 
      * @var int|null Optional Unit Year for the rental 
      */
@@ -95,7 +95,7 @@ class Rental {
         ?array $documents = null,
         ?array $signingTokens = null,
         ?string $trafalgarId = null,
-        ?int $unitYear = null,
+        ?int $unitYear = null
     ) {
         $this->applicationDate = new UTCDateTime();
         $this->status = in_array($status, ['Pending', 'Rejected', 'Active', 'Ended']) ? $status : 'Pending';
@@ -128,7 +128,7 @@ class Rental {
             'hasParking' => false,
             'fee' => 50.0 // Placeholder fee
         ], $parking ?? []);
-
+        
         $this->shuttle = array_merge([
             'hasShuttle' => false,
             'fee' => 50.0 // Placeholder fee
@@ -160,7 +160,7 @@ class Rental {
                 'docType'     => null, 
             ], $doc);
         }, $documents ?? []);
-
+        
         $this->signingTokens = $signingTokens;
     }
 

@@ -26,9 +26,7 @@ class User {
     public $rightsType;
     public $shuttles;
     public $hasShuttle;
-
-
-
+    
     public $guardianEmail;
     public $guardianVerification;
     public $guardianName; 
@@ -54,7 +52,7 @@ class User {
         $shuttles = [],
         $rightsType = null,
         $hasShuttle = false,
-
+        
         $guardianEmail = null, 
         $guardianVerification = [],
         $guardianName = null  
@@ -72,7 +70,7 @@ class User {
         $this->dateCreated = new UTCDateTime();
         $this->rightsType = $rightsType; 
         $this->hasShuttle = $hasShuttle;
-
+        
         $this->guardianEmail = $guardianEmail;
         $this->guardianName = $guardianName;
 
@@ -92,7 +90,7 @@ class User {
             'verificationToken' => null,
             'verificationTokenExpires' => null
         ], $verification);
-
+        
         $this->guardianVerification = array_merge([
             'isVerified' => false,
             'verificationToken' => null,
@@ -106,22 +104,11 @@ class User {
         ], $forgotPassword);
 
         // Login Info
-        // $this->loginInfo = array_merge([
-        //     'lastLogin' => null,
-        //     'isLoggedIn' => false,
-        //     'loginCount' => 0,
-        //     'loginToken' => null
-        // ], $loginInfo);
-
-        // Login Info
         $this->loginInfo = array_merge([
             'lastLogin' => null,
             'isLoggedIn' => false,
             'loginCount' => 0,
-            'loginToken' => null,
-            'refreshToken' => null,
-            'currentOtp' => null,
-            'otpVerifiedAt' => null
+            'loginToken' => null
         ], $loginInfo);
 
         // FOREIGN KEYS

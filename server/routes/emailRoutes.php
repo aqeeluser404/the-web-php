@@ -16,17 +16,18 @@ return function (App $app) {
 
     $app->post('/api/contact', [SendEmailCOntroller::class, 'getInContactController']);
 
-    // $app->post('/api/user-request/{id}', [SendEmailCOntroller::class, 'sendUserRequestController']);
+    $app->post('/api/user-request/{id}', [SendEmailCOntroller::class, 'sendUserRequestController']);
 
     $app->post('/api/approved-rental', [SendEmailCOntroller::class, 'rentalNotifcationController']);
-
+    
     $app->post('/api/create-rental-application', [SendEmailCOntroller::class, 'rentalApplicationEmailController']);
-
+    
     $app->post('/api/create-rental-to-user-application', [SendEmailCOntroller::class, 'rentalApplicationToUserEmailController']);
 
     $app->post('/api/document-upload-to-user-email', [SendEmailCOntroller::class, 'documentUploadToUserEmailController']);
 
     $app->post('/api/document-upload-email', [SendEmailCOntroller::class, 'documentUploadEmailController']);
+
 
     // NEW FUNCTION - ADD TO EXPRESS
     $app->post('/api/rental-action-reminder', [SendEmailCOntroller::class, 'sendRentalActionReminderController']);
@@ -37,6 +38,6 @@ return function (App $app) {
 
     // NEW FUNCTION - ADD TO EXPRESS
     $app->post('/api/send-vendor-email', [SendEmailCOntroller::class, 'sendVendorController']);
-
+    
     $app->post('/api/send-lease-link', [SendEmailCOntroller::class, 'sendLeaseLinkController']);
 };

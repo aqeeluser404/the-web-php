@@ -14,31 +14,27 @@ use Slim\Psr7\UploadedFile;
 $dotenv = Dotenv::createImmutable(__DIR__ . '/../../../');
 $dotenv->load();
 
-class RentalController
-{
+class RentalController {
     private $rentalController;
     private $rentalService;
 
-    public function __construct()
-    {
+    public function __construct() {
         $db = Database::getDb();
         $this->rentalController = $db->Rental;
         $this->rentalService = new RentalService();
     }
 
-    protected function respond(Response $response, $data, int $status = 200): Response
-    {
+    protected function respond(Response $response, $data, int $status = 200): Response {
         $response->getBody()->write(json_encode($data));
         return $response
             ->withStatus($status)
             ->withHeader('Content-Type', 'application/json');
     }
 
-    public function syncRentalController($req, $res)
-    {
+    public function syncRentalController($req, $res) {
         try {
             $this->rentalService->syncRentalService();
-            return $this->respond($res, ['message' => 'Rental synced successfully'], 200);
+            return $this->respond($res,  ['message' => 'Rental synced successfully'], 200);
         } catch (Exception $e) {
             return $this->respond($res, [
                 'error' => $e->getMessage()
@@ -46,8 +42,7 @@ class RentalController
         }
     }
 
-    public function createRentalController($req, $res)
-    {
+    public function createRentalController($req, $res) {
         try {
             $rentalDetails = $req->getParsedBody();
 
@@ -116,12 +111,11 @@ class RentalController
         }
     }
 
-    public function deleteRentalController($req, $res)
-    {
+    public function deleteRentalController($req, $res) {
         try {
             $id = $req->getAttribute('id');
             $this->rentalService->deleteRentalService($id);
-            return $this->respond($res, ['message' => 'Rental deleted successfully'], 200);
+            return $this->respond($res,  ['message' => 'Rental deleted successfully'], 200);
         } catch (Exception $e) {
             return $this->respond($res, [
                 'error' => $e->getMessage()
@@ -129,12 +123,11 @@ class RentalController
         }
     }
 
-    public function findRentalByIdController($req, $res)
-    {
+    public function findRentalByIdController($req, $res) {
         try {
             $id = $req->getAttribute('id');
             $rental = $this->rentalService->findRentalByIdService($id);
-            return $this->respond($res, $rental, 200);
+            return $this->respond($res,  $rental, 200);
         } catch (Exception $e) {
             return $this->respond($res, [
                 'error' => $e->getMessage()
@@ -142,11 +135,10 @@ class RentalController
         }
     }
 
-    public function findAllRentalsController($req, $res)
-    {
+    public function findAllRentalsController($req, $res) {
         try {
             $rentals = $this->rentalService->findAllRentalsService();
-            return $this->respond($res, $rentals, 200);
+            return $this->respond($res,  $rentals, 200);
         } catch (Exception $e) {
             return $this->respond($res, [
                 'error' => $e->getMessage()
@@ -154,12 +146,11 @@ class RentalController
         }
     }
 
-    public function findAllMyRentalsController($req, $res)
-    {
+    public function findAllMyRentalsController($req, $res) {
         try {
             $id = $req->getAttribute('id');
             $rentals = $this->rentalService->findAllMyRentalsService($id);
-            return $this->respond($res, $rentals, 200);
+            return $this->respond($res,  $rentals, 200);
         } catch (Exception $e) {
             return $this->respond($res, [
                 'error' => $e->getMessage()
@@ -167,13 +158,12 @@ class RentalController
         }
     }
 
-    public function updateRentalController($req, $res)
-    {
+    public function updateRentalController($req, $res) {
         try {
             $id = $req->getAttribute('id');
             $rentalDetails = $req->getParsedBody();
             $updatedRental = $this->rentalService->updateRentalService($id, $rentalDetails);
-            return $this->respond($res, $updatedRental, 200);
+            return $this->respond($res,  $updatedRental, 200);
         } catch (Exception $e) {
             return $this->respond($res, [
                 'error' => $e->getMessage()
@@ -181,12 +171,11 @@ class RentalController
         }
     }
 
-    public function reassignUnitController($req, $res)
-    {
+    public function reassignUnitController($req, $res) {
         try {
             $reassignDetails = $req->getParsedBody();
             $updatedRental = $this->rentalService->reassignUnitService($reassignDetails);
-            return $this->respond($res, $updatedRental, 200);
+            return $this->respond($res,  $updatedRental, 200);
         } catch (Exception $e) {
             return $this->respond($res, [
                 'error' => $e->getMessage()
@@ -194,12 +183,11 @@ class RentalController
         }
     }
 
-    public function endRentalController($req, $res)
-    {
+    public function endRentalController($req, $res) {
         try {
             $id = $req->getAttribute('id');
             $updatedRental = $this->rentalService->endRentalService($id);
-            return $this->respond($res, $updatedRental, 200);
+            return $this->respond($res,  $updatedRental, 200);
         } catch (Exception $e) {
             return $this->respond($res, [
                 'error' => $e->getMessage()
@@ -207,8 +195,7 @@ class RentalController
         }
     }
 
-    public function verifyAndSavePayerController($req, $res)
-    {
+    public function verifyAndSavePayerController($req, $res) {
         try {
             $id = $req->getAttribute('id');
             $rentalData = $req->getParsedBody();
@@ -226,12 +213,11 @@ class RentalController
         }
     }
 
-    public function earlyEndRentalController($req, $res)
-    {
+    public function earlyEndRentalController($req, $res) {
         try {
             $id = $req->getAttribute('id');
             $updatedRental = $this->rentalService->earlyEndRentalService($id);
-            return $this->respond($res, $updatedRental, 200);
+            return $this->respond($res,  $updatedRental, 200);
         } catch (Exception $e) {
             return $this->respond($res, [
                 'error' => $e->getMessage()
@@ -239,13 +225,11 @@ class RentalController
         }
     }
 
-    public function uploadRentalDocsController($req, $res)
-    {
+    public function uploadRentalDocsController($req, $res) {
         try {
             $userId = $req->getAttribute('id');
             $files = $req->getUploadedFiles();
             $result = $this->rentalService->uploadRentalDocsService($userId, $files);
-
             return $this->respond($res, $result, 200);
         } catch (Exception $e) {
             return $this->respond($res, [
@@ -254,8 +238,7 @@ class RentalController
         }
     }
 
-    public function clearAllRentalDocsController($req, $res)
-    {
+    public function clearAllRentalDocsController($req, $res) {
         try {
             $rentalId = $req->getAttribute('id');
             $result = $this->rentalService->clearAllRentalDocsService($rentalId);
@@ -266,7 +249,7 @@ class RentalController
             ], 500);
         }
     }
-
+    
     public function validateSignerTokenController($req, $res)
     {
         try {
@@ -380,5 +363,4 @@ class RentalController
             return $this->respond($res, ['valid' => false, 'error' => $e->getMessage()], 500);
         }
     }
-
 }

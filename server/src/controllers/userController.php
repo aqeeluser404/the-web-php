@@ -71,8 +71,7 @@ class UserController
         }
     }
 
-    public function userLoginController(Request $req, Response $res): Response
-    {
+    public function userLoginController(Request $req, Response $res): Response {
         try {
             $body = $req->getParsedBody();
 
@@ -99,7 +98,7 @@ class UserController
                     'path' => '/',
                     'secure' => $isProduction,
                     'httponly' => true,
-                    'samesite' => 'None'
+                    'samesite'  => 'None'
                 ]);
             }
 
@@ -120,11 +119,11 @@ class UserController
             // $maxAge = 7200; // Token expires in 2 hours (7200 seconds)
 
             setcookie('token', $token, [
-                'expires' => time() + $maxAge,
-                'path' => '/',
-                'secure' => $isProduction,
-                'httponly' => true,
-                'samesite' => 'None'
+                'expires'   => time() + $maxAge,
+                'path'      => '/',
+                'secure'    => $isProduction,
+                'httponly'  => true,
+                'samesite'  => 'None'
             ]);
 
             return $this->respondText($res, $token);
@@ -136,8 +135,7 @@ class UserController
     }
 
 
-    public function adminLoginController(Request $req, Response $res): Response
-    {
+    public function adminLoginController(Request $req, Response $res): Response {
         try {
             $body = $req->getParsedBody();
 
@@ -168,11 +166,11 @@ class UserController
             $maxAge = 7200;
 
             setcookie('token', $token, [
-                'expires' => time() + $maxAge,
-                'path' => '/',
-                'secure' => $isProduction,
-                'httponly' => true,
-                'samesite' => 'None'
+                'expires'   => time() + $maxAge,
+                'path'      => '/',
+                'secure'    => $isProduction,
+                'httponly'  => true,
+                'samesite'  => 'None'
             ]);
 
             return $this->respondText($res, $token);
@@ -295,7 +293,7 @@ class UserController
     // }
 
 
-    // Report monthly/weekly for shuttle
+// Report monthly/weekly for shuttle
 // driver account
 
 
@@ -393,7 +391,7 @@ class UserController
             ], 404);
         }
     }
-
+    
     public function findUsersByIdsController($req, $res)
     {
         try {

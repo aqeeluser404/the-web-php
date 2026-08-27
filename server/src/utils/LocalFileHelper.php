@@ -99,7 +99,7 @@ class localFileHelper {
             throw new RuntimeException('File upload failed: ' . $e->getMessage());
         }
     }
-
+    
     // private function uploadFile(UploadedFile $file, string $type): array {
     //     try {
     //         // Validate the upload

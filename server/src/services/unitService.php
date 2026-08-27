@@ -116,11 +116,12 @@ class UnitService
     //     );
     // }
 
+
     protected function unitChecks($unit)
     {
         error_log("unitChecks called for unit: " . json_encode($unit));
         $updateData = [];
-
+    
         // ========== SAFETY CHECK: Recalculate currentOccupants from subUnits ==========
         $occupiedCount = 0;
         if (!empty($unit['subUnits'])) {
@@ -132,12 +133,12 @@ class UnitService
                 if ($subUnit instanceof \MongoDB\Model\BSONDocument) {
                     $subUnit = $subUnit->getArrayCopy();
                 }
-
+            
                 $val = $subUnit['isAvailable'] ?? null;
-
+            
                 // Normalize to boolean
                 $isAvailable = filter_var($val, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-
+            
                 // If it's explicitly false (boolean false, "false", 0), count as occupied
                 if ($isAvailable === false) {
                     $occupiedCount++;
@@ -149,15 +150,15 @@ class UnitService
         }
         
         $updateData['currentOccupants'] = $occupiedCount;
-
+    
         // Status check: compare recalculated currentOccupants vs max unitOccupants
         $capacity = $unit['unitOccupants'] ?? 0;
         $updateData['unitStatus'] = ($occupiedCount >= $capacity)
             ? 'Occupied'
             : 'Available';
-
+    
         $now = new UTCDateTime();
-
+    
         // 1. If unit is empty → clear everything
         if ($occupiedCount == 0) {
             $updateData['accessKey.isShared'] = null;
@@ -166,7 +167,7 @@ class UnitService
             $updateData['accessKey.expiresAt'] = null;
             $updateData['genderAssignment'] = null;
         }
-
+    
         // 2. If access key is expired (but unit is not empty)
         else if (
             isset($unit['accessKey']['expiresAt']) && 
@@ -178,15 +179,15 @@ class UnitService
             $updateData['accessKey.assignedKey'] = null;
             $updateData['accessKey.createdAt'] = null;
             $updateData['accessKey.expiresAt'] = null;
-
+    
             // Find rentals linked to this unit with an access key assigned
             $rentalsWithKey = iterator_to_array($this->rentalCollection->find([
                 'unit' => new ObjectId($unit['_id']),
                 'accessKey' => ['$exists' => true, '$ne' => null]
             ]));
-
+    
             $rentalCount = count($rentalsWithKey);
-
+    
             if ($rentalCount > 1) {
                 foreach ($rentalsWithKey as $rental) {
                     try {
@@ -199,13 +200,13 @@ class UnitService
             } else if ($rentalCount === 1) {
                 // One person → keep logic as is
                 $rental = $rentalsWithKey[0];
-
+    
                 // Clear access key from rental
                 $this->rentalCollection->updateOne(
                     ['_id' => $rental['_id']],
                     ['$unset' => ['accessKey' => '']]
                 );
-
+    
                 // Assign gender from user
                 if (isset($rental['user'])) {
                     $user = $this->userCollection->findOne(['_id' => $rental['user']]);
@@ -215,14 +216,14 @@ class UnitService
                 }
             }
         }
-
+        
         // If unit has exactly one occupant and no gender assigned yet
         if ($occupiedCount === 1 && empty($unit['genderAssignment'])) {
             $rental = $this->rentalCollection->findOne([
                 'unit' => new ObjectId($unit['_id']),
                 'status' => 'Active' // or include Pending if you want to lock earlier
             ]);
-
+        
             if ($rental && isset($rental['user'])) {
                 $user = $this->userCollection->findOne(['_id' => $rental['user']]);
                 if ($user && isset($user['gender'])) {
@@ -230,25 +231,25 @@ class UnitService
                 }
             }
         }
-
+    
         // 3. Gender validation (optional conflict check)
         if (!empty($updateData['genderAssignment'])) {
             $existingUnit = $this->unitCollection->findOne([
                 'unitNumber' => $unit['unitNumber'],
                 '_id' => ['$ne' => new ObjectId($unit['_id'])]
             ]);
-
+    
             if ($existingUnit && isset($existingUnit['genderAssignment']) && 
                 $existingUnit['genderAssignment'] !== $updateData['genderAssignment']) {
                 throw new Exception("Gender restriction: This unit is only available for " . $existingUnit['genderAssignment'] . "s.");
             }
         }
-
+        
         if (!isset($unit['unitYear']) || $unit['unitYear'] === null) {
             $updateData['unitYear'] = 2026;
             error_log("Added unitYear = 2026 to unit: {$unit['unitNumber']}");
         }
-
+    
         // Apply update - only include fields that are set
         if (!empty($updateData)) {
             $this->unitCollection->updateOne(
@@ -256,7 +257,7 @@ class UnitService
                 ['$set' => $updateData]
             );
         }
-
+        
         // $this->fixRentalDatesTo2026();
     }
 
@@ -334,93 +335,6 @@ class UnitService
         }
     }
 
-    // protected function unitChecks($unit)
-    // {
-    //     $updateData = [];
-
-    //     // Status check
-    //     $updateData['unitStatus'] = ($unit['currentOccupants'] >= $unit['unitOccupants'])
-    //         ? 'Occupied'
-    //         : 'Available';
-
-    //     $now = new UTCDateTime();
-
-    //     // 1. If unit is empty → clear everything
-    //     if ($unit['currentOccupants'] == 0) {
-    //         $updateData['accessKey.isShared'] = null;
-    //         $updateData['accessKey.assignedKey'] = null;
-    //         $updateData['accessKey.createdAt'] = null;
-    //         $updateData['accessKey.expiresAt'] = null;
-    //         $updateData['genderAssignment'] = null;
-    //     }
-
-    //     // 2. If access key is expired (but unit is not empty)
-    //     else if (
-    //         !empty($unit['accessKey']['expiresAt']) &&
-    //         $unit['accessKey']['expiresAt'] <= $now
-    //     ) {
-    //         // Clear access key from the unit itself
-    //         $updateData['accessKey.isShared'] = null;
-    //         $updateData['accessKey.assignedKey'] = null;
-    //         $updateData['accessKey.createdAt'] = null;
-    //         $updateData['accessKey.expiresAt'] = null;
-
-    //         // Find rentals linked to this unit with an access key assigned
-    //         $rentalsWithKey = iterator_to_array($this->rentalCollection->find([
-    //             'unit' => new ObjectId($unit['_id']),
-    //             'accessKey' => ['$exists' => true, '$ne' => null]
-    //         ]));
-
-    //         $rentalCount = count($rentalsWithKey);
-
-    //         if ($rentalCount > 1) {
-    //             foreach ($rentalsWithKey as $rental) {
-    //                 try {
-    //                     $this->rentalService->deleteRentalService((string) $rental['_id']);
-    //                 } catch (Exception $e) {
-    //                     error_log("Failed to delete rental {$rental['_id']}: " . $e->getMessage());
-    //                 }
-    //             }
-
-    //             $updateData['genderAssignment'] = null;
-    //         } else if ($rentalCount === 1) {
-    //             // One person → keep logic as is
-    //             $rental = $rentalsWithKey[0];
-
-    //             // Clear access key from rental
-    //             $this->rentalCollection->updateOne(
-    //                 ['_id' => $rental['_id']],
-    //                 ['$unset' => ['accessKey' => '']]
-    //             );
-
-    //             // Assign gender from user
-    //             if (isset($rental['user'])) {
-    //                 $user = $this->userCollection->findOne(['_id' => $rental['user']]);
-    //                 if ($user && isset($user['gender'])) {
-    //                     $updateData['genderAssignment'] = $user['gender'];
-    //                 }
-    //             }
-    //         }
-    //     }
-
-    //     // 3. Gender validation (optional conflict check)
-    //     if (!empty($updateData['genderAssignment'])) {
-    //         $existingUnit = $this->unitCollection->findOne([
-    //             'unitNumber' => $unit['unitNumber'],
-    //             '_id' => ['$ne' => new ObjectId($unit['_id'])]
-    //         ]);
-
-    //         if ($existingUnit && $existingUnit['genderAssignment'] !== $updateData['genderAssignment']) {
-    //             throw new Exception("Gender restriction: This unit is only available for " . $existingUnit['genderAssignment'] . "s.");
-    //         }
-    //     }
-
-    //     // Apply update
-    //     $this->unitCollection->updateOne(
-    //         ['_id' => new ObjectId($unit['_id'])],
-    //         ['$set' => $updateData]
-    //     );
-    // }
 
     public function reserveUnitService($unitId, $userId)
     {
@@ -484,94 +398,95 @@ class UnitService
             throw $e;
         }
     }
-    public function reserveRoomService($unitId, $roomIndex, $userId)
-    {
-        try {
-            // Retrieve the unit document by ID
-            $unit = $this->unitCollection->findOne(['_id' => new ObjectId($unitId)]);
-            if (!$unit) {
-                throw new Exception('Unit not found');
-            }
 
-            // Ensure subUnits exists and the requested room index is valid
-            if (empty($unit['subUnits']) || !isset($unit['subUnits'][$roomIndex])) {
-                throw new Exception('Room not found in unit');
-            }
-
-            $room = $unit['subUnits'][$roomIndex];
-
-            // Check if the room is already reserved
-            if (isset($room['reservedBy'])) {
-                throw new Exception('Room is already reserved');
-            }
-
-            // Build the update path for nested reservedBy and reservedAt
-            $reservedByField = 'subUnits.' . $roomIndex . '.reservedBy';
-            $reservedAtField = 'subUnits.' . $roomIndex . '.reservedAt';
-
-            // Perform the update on the subUnit array element
-            $this->unitCollection->updateOne(
-                ['_id' => new ObjectId($unitId)],
-                ['$set' => [
-                    $reservedByField => new ObjectId($userId),
-                    $reservedAtField => new UTCDateTime()
-                ]]
-            );
-
-            // Return the updated unit document
-            return $this->unitCollection->findOne(['_id' => new ObjectId($unitId)]);
-        } catch (Exception $e) {
-            error_log('Room reservation error: ' . $e->getMessage());
-            throw $e;
+public function reserveRoomService($unitId, $roomIndex, $userId)
+{
+    try {
+        // Retrieve the unit document by ID
+        $unit = $this->unitCollection->findOne(['_id' => new ObjectId($unitId)]);
+        if (!$unit) {
+            throw new Exception('Unit not found');
         }
-    }
 
-    public function cancelReserveRoomService($unitId, $roomIndex, $requestingUserId)
-    {
-        try {
-            // Retrieve the unit document by ID
-            $unit = $this->unitCollection->findOne(['_id' => new ObjectId($unitId)]);
-            if (!$unit) {
-                throw new Exception('Unit not found');
-            }
-
-            // Ensure subUnits exists and the requested room index is valid
-            if (empty($unit['subUnits']) || !isset($unit['subUnits'][$roomIndex])) {
-                throw new Exception('Room not found in unit');
-            }
-
-            $room = $unit['subUnits'][$roomIndex];
-
-            // Check if the room is reserved
-            if (!isset($room['reservedBy'])) {
-                throw new Exception('Room is not reserved');
-            }
-
-            // Check whether the requesting user is the one who reserved the room
-            if ((string) $room['reservedBy'] !== $requestingUserId) {
-                throw new Exception('Only the reserving user can cancel this reservation');
-            }
-
-            // Build the update fields to unset nested reservedBy and reservedAt
-            $reservedByField = 'subUnits.' . $roomIndex . '.reservedBy';
-            $reservedAtField = 'subUnits.' . $roomIndex . '.reservedAt';
-
-            // Perform the update to unset the reservation fields for the room
-            $this->unitCollection->updateOne(
-                ['_id' => new ObjectId($unitId)],
-                ['$unset' => [
-                    $reservedByField => "",
-                    $reservedAtField => ""
-                ]]
-            );
-
-            // Return the updated unit document
-            return $this->unitCollection->findOne(['_id' => new ObjectId($unitId)]);
-        } catch (Exception $e) {
-            error_log('Room reservation cancellation error: ' . $e->getMessage());
-            throw $e;
+        // Ensure subUnits exists and the requested room index is valid
+        if (empty($unit['subUnits']) || !isset($unit['subUnits'][$roomIndex])) {
+            throw new Exception('Room not found in unit');
         }
+
+        $room = $unit['subUnits'][$roomIndex];
+
+        // Check if the room is already reserved
+        if (isset($room['reservedBy'])) {
+            throw new Exception('Room is already reserved');
+        }
+
+        // Build the update path for nested reservedBy and reservedAt
+        $reservedByField = 'subUnits.' . $roomIndex . '.reservedBy';
+        $reservedAtField = 'subUnits.' . $roomIndex . '.reservedAt';
+
+        // Perform the update on the subUnit array element
+        $this->unitCollection->updateOne(
+            ['_id' => new ObjectId($unitId)],
+            ['$set' => [
+                $reservedByField => new ObjectId($userId),
+                $reservedAtField => new UTCDateTime()
+            ]]
+        );
+
+        // Return the updated unit document
+        return $this->unitCollection->findOne(['_id' => new ObjectId($unitId)]);
+    } catch (Exception $e) {
+        error_log('Room reservation error: ' . $e->getMessage());
+        throw $e;
     }
+}
+
+public function cancelReserveRoomService($unitId, $roomIndex, $requestingUserId)
+{
+    try {
+        // Retrieve the unit document by ID
+        $unit = $this->unitCollection->findOne(['_id' => new ObjectId($unitId)]);
+        if (!$unit) {
+            throw new Exception('Unit not found');
+        }
+
+        // Ensure subUnits exists and the requested room index is valid
+        if (empty($unit['subUnits']) || !isset($unit['subUnits'][$roomIndex])) {
+            throw new Exception('Room not found in unit');
+        }
+
+        $room = $unit['subUnits'][$roomIndex];
+
+        // Check if the room is reserved
+        if (!isset($room['reservedBy'])) {
+            throw new Exception('Room is not reserved');
+        }
+
+        // Check whether the requesting user is the one who reserved the room
+        if ((string) $room['reservedBy'] !== $requestingUserId) {
+            throw new Exception('Only the reserving user can cancel this reservation');
+        }
+
+        // Build the update fields to unset nested reservedBy and reservedAt
+        $reservedByField = 'subUnits.' . $roomIndex . '.reservedBy';
+        $reservedAtField = 'subUnits.' . $roomIndex . '.reservedAt';
+
+        // Perform the update to unset the reservation fields for the room
+        $this->unitCollection->updateOne(
+            ['_id' => new ObjectId($unitId)],
+            ['$unset' => [
+                $reservedByField => "",
+                $reservedAtField => ""
+            ]]
+        );
+
+        // Return the updated unit document
+        return $this->unitCollection->findOne(['_id' => new ObjectId($unitId)]);
+    } catch (Exception $e) {
+        error_log('Room reservation cancellation error: ' . $e->getMessage());
+        throw $e;
+    }
+}
 
     public function createUnitService(array $unitDetails, array $unitImages)
     {
@@ -592,6 +507,7 @@ class UnitService
                 throw new Exception('Unit already exists for this year');
             }
 
+            // Process images
             $imageData = array_map(function ($file) {
                 if ($file->getError() !== UPLOAD_ERR_OK) {
                     throw new Exception('Invalid image upload');
@@ -730,6 +646,7 @@ class UnitService
         }
     }
 
+
     public function findUnitByIdService($unitId)
     {
         try {
@@ -837,6 +754,7 @@ class UnitService
                 } else {
                     error_log("Unit not found for id {$unit['_id']}");
                 }
+
                 // $this->unitChecks($unit);
 
                 if (!empty($doc['subUnits'])) {
@@ -1028,116 +946,240 @@ class UnitService
     // }
 
 
-    public function updateUnitService($unitId, $unitDetails, $unitImages = [])
-    {
-        try {
-            // Handle subUnits input (decode if string)
-            if (!empty($unitDetails['subUnits']) && is_string($unitDetails['subUnits'])) {
-                $decoded = json_decode($unitDetails['subUnits'], true);
-                if (is_array($decoded)) {
-                    $newSubUnits = $decoded;
-                } else {
-                    $newSubUnits = [];
-                }
-            } else {
-                $newSubUnits = $unitDetails['subUnits'] ?? [];
+//     public function updateUnitService($unitId, $unitDetails, $unitImages = [])
+//     {
+//         try {
+//             // Handle subUnits input (decode if string)
+//             if (!empty($unitDetails['subUnits']) && is_string($unitDetails['subUnits'])) {
+//                 $decoded = json_decode($unitDetails['subUnits'], true);
+//                 if (is_array($decoded)) {
+//                     $newSubUnits = $decoded;
+//                 } else {
+//                     $newSubUnits = [];
+//                 }
+//             } else {
+//                 $newSubUnits = $unitDetails['subUnits'] ?? [];
+//             }
+
+//             // Normalize subUnits with named prices, backward compatible
+// $normalizedSubUnits = array_map(function ($subUnit, $index) use ($existingSubUnits) {
+//     $existing = $existingSubUnits[$index] ?? [];
+
+//     $prices = [];
+//     if (isset($subUnit['price']) && is_array($subUnit['price'])) {
+//         foreach ($subUnit['price'] as $priceEntry) {
+//             $prices[] = [
+//                 'name' => $priceEntry['name'] ?? 'default',
+//                 'price' => floatval($priceEntry['price'] ?? 0)
+//             ];
+//         }
+//     } elseif (isset($subUnit['price'])) {
+//         if (is_array($subUnit['price'])) {
+//             foreach ($subUnit['price'] as $priceVal) {
+//                 $prices[] = ['name' => 'default', 'price' => floatval($priceVal)];
+//             }
+//         } else {
+//             $prices[] = ['name' => 'default', 'price' => floatval($subUnit['price'])];
+//         }
+//     } else {
+//         $prices[] = ['name' => 'default', 'price' => 0];
+//     }
+
+//     return [
+//         'type' => $subUnit['type'] ?? $existing['type'] ?? 'room',
+//         'roomType' => $subUnit['roomType'] ?? $existing['roomType'] ?? null,
+//         'bedType' => $subUnit['bedType'] ?? $existing['bedType'] ?? null,
+//         'price' => $prices,
+//         'isAvailable' => $subUnit['isAvailable'] ?? $existing['isAvailable'] ?? true,
+//         'reservedBy' => $subUnit['reservedBy'] ?? $existing['reservedBy'] ?? null
+//     ];
+// }, $newSubUnits, array_keys($newSubUnits));
+
+
+//             // Calculate occupants from normalized subUnits
+//             $unitOccupants = count($normalizedSubUnits);
+
+//             // Calculate unitPrice from all prices if not provided
+//             if (!isset($unitDetails['unitPrice']) || $unitDetails['unitPrice'] === '') {
+//                 $allPrices = array_merge(...array_map(function ($subUnit) {
+//                     return array_map(fn($p) => floatval($p['price'] ?? 0), $subUnit['price']);
+//                 }, $normalizedSubUnits));
+//                 $unitDetails['unitPrice'] = count($allPrices) > 0 ? min($allPrices) : 0;
+//             } else {
+//                 $unitDetails['unitPrice'] = (float) $unitDetails['unitPrice'];
+//             }
+
+//             // Get existing unit from DB
+//             $unit = $this->unitCollection->findOne(['_id' => new ObjectId($unitId)]);
+//             if (!$unit) {
+//                 throw new Exception('Unit not found');
+//             }
+
+//             // Handle images removal/upload
+//             $imageData = [];
+//             if (!empty($unitImages['images'])) {
+//                 // Delete old images
+//                 foreach ($unit['images'] ?? [] as $image) {
+//                     $this->localFileHelper->deleteImage($image['fileId']);
+//                 }
+//                 // Upload new images
+//                 $imageData = array_map(function ($file) {
+//                     return $this->localFileHelper->uploadImage($file);
+//                 }, $unitImages['images']);
+//             } else {
+//                 $imageData = $unit['images'] ?? [];
+//             }
+
+//             // Prepare update data
+//             $updateData = [
+//                 'unitNumber' => (string) ($unitDetails['unitNumber'] ?? $unit['unitNumber']),
+//                 'floorLevel' => (string) ($unitDetails['floorLevel'] ?? $unit['floorLevel']),
+//                 'unitType' => (string) ($unitDetails['unitType'] ?? $unit['unitType']),
+//                 'unitOccupants' => (!empty($unitDetails['subUnits']) && count($normalizedSubUnits) > 0)
+//                     ? count($normalizedSubUnits)
+//                     : $unit['unitOccupants'],
+//                 'unitDescription' => (string) ($unitDetails['unitDescription'] ?? $unit['unitDescription']),
+//                 'unitPrice' => (float) ($unitDetails['unitPrice'] ?? $unit['unitPrice']),
+//                 'genderAssignment' => $unitDetails['genderAssignment'] ?? $unit['genderAssignment'] ?? null,
+//                 'images' => !empty($imageData) ? $imageData : ($unit['images'] ?? []),
+//                 'subUnits' => (!empty($unitDetails['subUnits']) && count($normalizedSubUnits) > 0)
+//                     ? $normalizedSubUnits
+//                     : $unit['subUnits'],
+
+//             ];
+
+//             // Execute update
+//             $result = $this->unitCollection->updateOne(
+//                 ['_id' => new ObjectId($unitId)],
+//                 ['$set' => $updateData]
+//             );
+
+//             if ($result->getModifiedCount() === 0) {
+//                 error_log("No documents were modified");
+//             }
+
+//         } catch (Exception $e) {
+//             error_log('Update failed: ' . $e->getMessage());
+//             throw $e;
+//         }
+//     }
+
+public function updateUnitService($unitId, $unitDetails, $unitImages = [])
+{
+    try {
+        // Step 1: Decode new subUnits if JSON string
+        if (!empty($unitDetails['subUnits']) && is_string($unitDetails['subUnits'])) {
+            $decoded = json_decode($unitDetails['subUnits'], true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                throw new Exception('Invalid subUnits JSON: ' . json_last_error_msg());
             }
-
-            // Normalize subUnits with named prices, backward compatible
-            $normalizedSubUnits = array_map(function ($subUnit) {
-                $prices = [];
-                if (isset($subUnit['price']) && is_array($subUnit['price'])) {
-                    foreach ($subUnit['price'] as $priceEntry) {
-                        $prices[] = [
-                            'name' => $priceEntry['name'] ?? 'default',
-                            'price' => floatval($priceEntry['price'] ?? 0)
-                        ];
-                    }
-                } elseif (isset($subUnit['price'])) {
-                    if (is_array($subUnit['price'])) {
-                        foreach ($subUnit['price'] as $priceVal) {
-                            $prices[] = ['name' => 'default', 'price' => floatval($priceVal)];
-                        }
-                    } else {
-                        $prices[] = ['name' => 'default', 'price' => floatval($subUnit['price'])];
-                    }
-                } else {
-                    $prices[] = ['name' => 'default', 'price' => 0];
-                }
-
-                return [
-                    'type' => $subUnit['type'] ?? 'room',
-                    'roomType' => $subUnit['roomType'] ?? null,
-                    'bedType' => $subUnit['bedType'] ?? null,
-                    'price' => $prices,
-                    'isAvailable' => $subUnit['isAvailable'] ?? true
-                ];
-            }, $newSubUnits);
-
-
-            // Calculate occupants from normalized subUnits
-            $unitOccupants = count($normalizedSubUnits);
-
-            // Calculate unitPrice from all prices if not provided
-            if (!isset($unitDetails['unitPrice']) || $unitDetails['unitPrice'] === '') {
-                $allPrices = array_merge(...array_map(function ($subUnit) {
-                    return array_map(fn($p) => floatval($p['price'] ?? 0), $subUnit['price']);
-                }, $normalizedSubUnits));
-                $unitDetails['unitPrice'] = count($allPrices) > 0 ? min($allPrices) : 0;
-            } else {
-                $unitDetails['unitPrice'] = (float) $unitDetails['unitPrice'];
-            }
-
-            // Get existing unit from DB
-            $unit = $this->unitCollection->findOne(['_id' => new ObjectId($unitId)]);
-            if (!$unit) {
-                throw new Exception('Unit not found');
-            }
-
-            // Handle images removal/upload
-            $imageData = [];
-            if (!empty($unitImages['images'])) {
-                // Delete old images
-                foreach ($unit['images'] ?? [] as $image) {
-                    $this->localFileHelper->deleteImage($image['fileId']);
-                }
-                // Upload new images
-                $imageData = array_map(function ($file) {
-                    return $this->localFileHelper->uploadImage($file);
-                }, $unitImages['images']);
-            } else {
-                $imageData = $unit['images'] ?? [];
-            }
-
-            // Prepare update data
-            $updateData = [
-                'unitNumber' => (string) ($unitDetails['unitNumber'] ?? $unit['unitNumber']),
-                'floorLevel' => (string) ($unitDetails['floorLevel'] ?? $unit['floorLevel']),
-                'unitType' => (string) ($unitDetails['unitType'] ?? $unit['unitType']),
-                'unitOccupants' => $unitOccupants,
-                'unitDescription' => (string) ($unitDetails['unitDescription'] ?? $unit['unitDescription']),
-                'unitPrice' => (float) ($unitDetails['unitPrice'] ?? $unit['unitPrice']),
-                'unitYear' => isset($unitDetails['unitYear']) ? (int) $unitDetails['unitYear'] : ($unit['unitYear'] ?? null),
-                'genderAssignment' => $unitDetails['genderAssignment'] ?? $unit['genderAssignment'] ?? null,
-                'images' => !empty($imageData) ? $imageData : ($unit['images'] ?? []),
-                'subUnits' => $normalizedSubUnits
-            ];
-
-            // Execute update
-            $result = $this->unitCollection->updateOne(
-                ['_id' => new ObjectId($unitId)],
-                ['$set' => $updateData]
-            );
-
-            if ($result->getModifiedCount() === 0) {
-                error_log("No documents were modified");
-            }
-
-        } catch (Exception $e) {
-            error_log('Update failed: ' . $e->getMessage());
-            throw $e;
+            $newSubUnits = is_array($decoded) ? $decoded : [];
+        } else {
+            $newSubUnits = $unitDetails['subUnits'] ?? [];
         }
+
+        // Step 2: Fetch existing unit from DB
+        $unit = $this->unitCollection->findOne(['_id' => new ObjectId($unitId)]);
+        if (!$unit) {
+            throw new Exception('Unit not found');
+        }
+        $existingSubUnits = $unit['subUnits'] ?? [];
+
+        // Step 3: Normalize subUnits with backward compatibility
+        $normalizedSubUnits = array_map(function ($subUnit, $index) use ($existingSubUnits) {
+            $existing = $existingSubUnits[$index] ?? [];
+
+            $prices = [];
+            if (isset($subUnit['price']) && is_array($subUnit['price'])) {
+                foreach ($subUnit['price'] as $priceEntry) {
+                    $prices[] = [
+                        'name' => $priceEntry['name'] ?? 'default',
+                        'price' => floatval($priceEntry['price'] ?? 0)
+                    ];
+                }
+            } elseif (isset($subUnit['price'])) {
+                if (is_array($subUnit['price'])) {
+                    foreach ($subUnit['price'] as $priceVal) {
+                        $prices[] = ['name' => 'default', 'price' => floatval($priceVal)];
+                    }
+                } else {
+                    $prices[] = ['name' => 'default', 'price' => floatval($subUnit['price'])];
+                }
+            } else {
+                $prices[] = ['name' => 'default', 'price' => 0];
+            }
+
+            return [
+                'type' => $subUnit['type'] ?? $existing['type'] ?? 'room',
+                'roomType' => $subUnit['roomType'] ?? $existing['roomType'] ?? null,
+                'bedType' => $subUnit['bedType'] ?? $existing['bedType'] ?? null,
+                'price' => $prices,
+                'isAvailable' => $subUnit['isAvailable'] ?? $existing['isAvailable'] ?? true,
+                'reservedBy' => $subUnit['reservedBy'] ?? $existing['reservedBy'] ?? null
+            ];
+        }, $newSubUnits, array_keys($newSubUnits));
+
+        // Step 4: Calculate occupants
+        $unitOccupants = count($normalizedSubUnits);
+
+        // Step 5: Calculate unitPrice if not provided
+        if (!isset($unitDetails['unitPrice']) || $unitDetails['unitPrice'] === '') {
+            $allPrices = array_merge(...array_map(function ($subUnit) {
+                return array_map(fn($p) => floatval($p['price'] ?? 0), $subUnit['price']);
+            }, $normalizedSubUnits));
+            $unitDetails['unitPrice'] = count($allPrices) > 0 ? min($allPrices) : 0;
+        } else {
+            $unitDetails['unitPrice'] = (float) $unitDetails['unitPrice'];
+        }
+
+        // Step 6: Handle images
+        $imageData = [];
+        if (!empty($unitImages['images'])) {
+            foreach ($unit['images'] ?? [] as $image) {
+                $this->localFileHelper->deleteImage($image['fileId']);
+            }
+            $imageData = array_map(function ($file) {
+                return $this->localFileHelper->uploadImage($file);
+            }, $unitImages['images']);
+        } else {
+            $imageData = $unit['images'] ?? [];
+        }
+
+        // Step 7: Prepare update data
+        $updateData = [
+            'unitNumber' => (string) ($unitDetails['unitNumber'] ?? $unit['unitNumber']),
+            'floorLevel' => (string) ($unitDetails['floorLevel'] ?? $unit['floorLevel']),
+            'unitType' => (string) ($unitDetails['unitType'] ?? $unit['unitType']),
+            'unitOccupants' => (!empty($unitDetails['subUnits']) && count($normalizedSubUnits) > 0)
+                ? count($normalizedSubUnits)
+                : $unit['unitOccupants'],
+            'unitDescription' => (string) ($unitDetails['unitDescription'] ?? $unit['unitDescription']),
+            'unitPrice' => (float) ($unitDetails['unitPrice'] ?? $unit['unitPrice']),
+            'unitYear' => isset($unitDetails['unitYear']) ? (int) $unitDetails['unitYear'] : ($unit['unitYear'] ?? null),
+            'genderAssignment' => $unitDetails['genderAssignment'] ?? $unit['genderAssignment'] ?? null,
+            'images' => !empty($imageData) ? $imageData : ($unit['images'] ?? []),
+            'subUnits' => (!empty($unitDetails['subUnits']) && count($normalizedSubUnits) > 0)
+                ? $normalizedSubUnits
+                : $unit['subUnits'],
+        ];
+
+        // Step 8: Execute update
+        $result = $this->unitCollection->updateOne(
+            ['_id' => new ObjectId($unitId)],
+            ['$set' => $updateData]
+        );
+
+        if ($result->getModifiedCount() === 0) {
+            error_log("No documents were modified");
+        }
+
+    } catch (Exception $e) {
+        error_log('Update failed: ' . $e->getMessage());
+        throw $e;
     }
+}
+
+
 
     public function deleteUnitService(string $unitId): bool
     {

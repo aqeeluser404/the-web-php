@@ -27,7 +27,7 @@ class Unit
 
     /** @var float */
     public $unitPrice;
-
+    
     /** 
      * @var int The year this unit is available for (e.g., 2026, 2027)
      */
@@ -81,6 +81,7 @@ class Unit
         string $unitDescription,
         float $unitPrice,
         int $unitYear,
+
         array $subUnits = [],
 
         string $unitStatus = 'Available',

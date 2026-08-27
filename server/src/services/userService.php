@@ -571,7 +571,7 @@ class UserService
                     'verificationToken' => $doc['verification']['verificationToken'] ?? null,
                     'verificationTokenExpires' => $doc['verification']['verificationTokenExpires'] ?? null
                 ] : null;
-
+                
                 $user['guardianVerification'] = isset($doc['guardianVerification']) ? [
                         'isVerified' => $doc['guardianVerification']['isVerified'] ?? false,
                         'verificationToken' => $doc['guardianVerification']['verificationToken'] ?? null,
@@ -614,7 +614,7 @@ class UserService
             throw $e;
         }
     }
-
+    
     public function findUsersByIdsService(array $userIds) {
         try {
             // Remove duplicates and empty values
@@ -657,6 +657,66 @@ class UserService
         }
     }
 
+
+    // public function updateUserService($id, $userDetails)
+    // {
+    //     try {
+    //         // Handle password hashing if present
+    //         if (isset($userDetails['password'])) {
+    //             $userDetails['password'] = password_hash($userDetails['password'], PASSWORD_BCRYPT);
+    //         }
+
+    //         // Handle dateOfBirth conversion
+    //         if (isset($userDetails['dateOfBirth']) && !empty($userDetails['dateOfBirth'])) {
+    //             $timestamp = strtotime($userDetails['dateOfBirth']);
+    //             if ($timestamp !== false) {
+    //                 $userDetails['dateOfBirth'] = new UTCDateTime($timestamp * 1000);
+    //             } else {
+    //                 unset($userDetails['dateOfBirth']);
+    //             }
+    //         }
+
+    //         $currentUser = $this->userCollection->findOne(['_id' => new ObjectId($id)]);
+    //         if (!$currentUser) {
+    //             throw new Exception('User not found');
+    //         }
+
+    //         // Check if email is being updated
+    //         $isEmailUpdated = isset($userDetails['email']) && $userDetails['email'] !== $currentUser['email'];
+
+    //         // Update user details
+    //         $this->userCollection->updateOne(
+    //             ['_id' => new ObjectId($id)],
+    //             ['$set' => $userDetails]
+    //         );
+
+    //         // Handle email verification if email was updated
+    //         if ($isEmailUpdated) {
+    //             $verificationToken = JWT::encode(['userId' => (string) $currentUser['_id']], $_ENV['JWT_SECRET'], 'HS256');
+    //             $this->userCollection->updateOne(
+    //                 ['_id' => new ObjectId($id)],
+    //                 [
+    //                     '$set' => [
+    //                         'verification.isVerified' => false,
+    //                         'verification.verificationToken' => $verificationToken,
+    //                         'verification.verificationTokenExpires' => new UTCDateTime(time() * 1000 + 3600000) // 1 hour
+    //                     ]
+    //                 ]
+    //             );
+    //         }
+
+    //         // Recalculate and save age if dateOfBirth was updated
+    //         if (isset($userDetails['dateOfBirth'])) {
+    //             $this->calculateAndSaveAge($id);
+    //         }
+
+    //         // Return the fully updated user
+    //         return $this->userCollection->findOne(['_id' => new ObjectId($id)]);
+    //     } catch (Exception $e) {
+    //         throw $e;
+    //     }
+    // }
+    
     public function updateUserService($id, $userDetails)
     {
         try {

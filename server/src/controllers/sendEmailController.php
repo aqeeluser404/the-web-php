@@ -39,6 +39,52 @@ class SendEmailCOntroller {
     }
 
     // -----------------------------------------------------------------------------------------------------------------> WORKING
+    // public function verifyEmailController($req, $res) {
+    //     try {
+    //         // Get token from query 
+    //         $queryParams = $req->getQueryParams();
+    //         $token = $queryParams['token'] ?? null;
+    //         if (!$token) {
+    //             return $this->respond($res, ['error' => 'Token is required.'], 400);
+    //         }
+    //         // decode token
+    //         $decoded = JWT::decode($token, new Key($_ENV['JWT_SECRET'], 'HS256'));
+    //         $userId = new ObjectId($decoded->userId);
+    //         // find user
+    //         $user = $this->userCollection->findOne([
+    //             '_id' => $userId,
+    //             'verification.verificationToken' => $token
+    //         ]);
+    //         if (!$user) {
+    //             return $this->respond($res, ['error' => 'User not found.'], 404);
+    //         }
+    //         // Check token expiration
+    //         $expirationTime = $user['verification']['verificationTokenExpires'] ?? null;
+    //         if ($expirationTime && $expirationTime instanceof UTCDateTime) {
+    //             if ($expirationTime->toDateTime()->getTimestamp() < time()) {
+    //                 return $this->respond($res, ['error' => 'Token has expired.'], 400);
+    //             }
+    //         }
+    //         // Update user verification status
+    //         $updateResult = $this->userCollection->updateOne(
+    //             ['_id' => $userId],
+    //             ['$set' => [
+    //                 'verification.isVerified' => true,
+    //                 'verification.verificationToken' => null,
+    //                 'verification.verificationTokenExpires' => null
+    //             ]]
+    //         );
+    //         if ($updateResult->getModifiedCount() === 0) {
+    //             throw new Exception('Failed to update user verification status');
+    //         }
+    //         return $this->respond($res, ['message' => 'Email verified successfully!']);
+    //     } catch (Exception $e) {
+    //         return $this->respond($res, [
+    //             'error' => $e->getMessage()
+    //         ], 500);
+    //     }
+    // }
+    
     public function verifyEmailController($req, $res) {
         try {
             $queryParams = $req->getQueryParams();
@@ -90,12 +136,58 @@ class SendEmailCOntroller {
     }
 
     // -----------------------------------------------------------------------------------------------------------------> WORKING
+    // public function resendVerificationEmailController($req, $res) {
+    //     try {
+    //         $email = $req->getParsedBody()['email'] ?? null;
+    //         if (!$email) {
+    //             return $this->respond($res, ['error' => 'Email is required.'], 400);
+    //         }
+    //         // Find user by email
+    //         $user = $this->userCollection->findOne(['email' => $email]);
+    //         if (!$user) {
+    //             return $this->respond($res, ['error' => 'User not found.'], 404);
+    //         }
+    //         if (($user['verification']['isVerified'] ?? false) === true) {
+    //             return $this->respond($res, ['error' => 'Email is already verified.'], 400);
+    //         }
+    //         // Generate new verification token (24 hour expiration)
+    //         $tokenPayload = [
+    //             'userId' => (string)$user['_id'],
+    //             'exp' => time() + 86400 // 24 hours
+    //         ];
+    //         $verificationToken = JWT::encode($tokenPayload, $_ENV['JWT_SECRET'], 'HS256');
+    //         // Update user document with new token
+    //         $updateResult = $this->userCollection->updateOne(
+    //             ['_id' => $user['_id']],
+    //             ['$set' => [
+    //                 'verification.verificationToken' => $verificationToken,
+    //                 'verification.verificationTokenExpires' => new UTCDateTime(($tokenPayload['exp']) * 1000)
+    //             ]]
+    //         );
+    //         if ($updateResult->getModifiedCount() === 0) {
+    //             throw new Exception('Failed to update verification token');
+    //         }
+    //         // Update the user array with new verification data
+    //         // $user['verification']['verificationToken'] = $verificationToken;
+    //         // $user['verification']['verificationTokenExpires'] = new UTCDateTime(($tokenPayload['exp']) * 1000);
     
+    //         $userForEmail = $this->userCollection->findOne(['_id' => new ObjectId($user['_id'])]);
+
+    //         $this->emailService->verifyEmail( $userForEmail);
+    //         return $this->respond($res, ['message' => 'Verification email resent.']);
+    //     } catch (Exception $e) {
+    //         error_log('Error resending verification email: ' . $e->getMessage());
+    //         return $this->respond($res, [
+    //             'error' => 'Error resending verification email.'
+    //         ], 500);
+    //     }
+    // }
+
     public function resendVerificationEmailController($req, $res) {
         try {
             $body = $req->getParsedBody();
             $email = $body['email'] ?? null;
-            $requestedType = $body['type'] ?? null;
+            $requestedType = $body['type'] ?? null; // 🆕 'user' or 'guardian', optional
     
             if (!$email) {
                 return $this->respond($res, ['error' => 'Email is required.'], 400);
@@ -110,7 +202,7 @@ class SendEmailCOntroller {
             $hasGuardianEmail = !empty($user['guardianEmail']);
             $guardianIsVerified = ($user['guardianVerification']['isVerified'] ?? false) === true;
     
-            // explicit type from frontend takes priority, validated against actual state
+            // 🆕 explicit type from frontend takes priority, validated against actual state
             if ($requestedType === 'user') {
                 if ($userIsVerified) {
                     return $this->respond($res, ['error' => 'Email is already verified.'], 400);
@@ -125,7 +217,7 @@ class SendEmailCOntroller {
                 }
                 $type = 'guardian';
             } else {
-                // no explicit type given — fall back to the original auto-detect behavior
+                // 🆕 no explicit type given — fall back to the original auto-detect behavior
                 if (!$userIsVerified) {
                     $type = 'user';
                 } elseif ($hasGuardianEmail && !$guardianIsVerified) {
@@ -170,7 +262,6 @@ class SendEmailCOntroller {
             ], 500);
         }
     }
-
     // -----------------------------------------------------------------------------------------------------------------> WORKING
     public function forgotPasswordController($req, $res) {
         try {
@@ -274,7 +365,7 @@ class SendEmailCOntroller {
             ], 500);
         }
     }
-
+    
     public function rentalApplicationEmailController($req, $res) {
         try {
             $body = $req->getParsedBody();
@@ -307,7 +398,7 @@ class SendEmailCOntroller {
             ], 500);
         }
     }
-
+    
     // public function rentalApplicationToUserEmailController($req, $res) {
     //     try {
     //         $body = $req->getParsedBody();
@@ -325,7 +416,7 @@ class SendEmailCOntroller {
     //         ], 500);
     //     }
     // }
-
+    
     public function rentalApplicationToUserEmailController($req, $res) {
         try {
             $body = $req->getParsedBody();
@@ -378,9 +469,12 @@ class SendEmailCOntroller {
                     ['$set' => ['signingTokens' => $signingTokens]]
                 );
             }
-
+            
             $tenantLink = $_ENV['HOST_LINK_0'] . '/digital-application?userId=' . $userId . '&role=tenant&token=' . $signingTokens['tenant']['token'];
             $guardianLink = $_ENV['HOST_LINK_0'] . '/digital-application?userId=' . $userId . '&role=guardian&token=' . $signingTokens['guardian']['token'];
+
+            // $tenantLink = $_ENV['HOST_LINK_2'] . '/digital-application?userId=' . $userId . '&role=tenant&token=' . $signingTokens['tenant']['token'];
+            // $guardianLink = $_ENV['HOST_LINK_2'] . '/digital-application?userId=' . $userId . '&role=guardian&token=' . $signingTokens['guardian']['token'];
 
             $this->emailService->rentalApplicationToUserEmail($user, $tenantLink, $guardianLink, $guardianEmail);
 
@@ -395,7 +489,6 @@ class SendEmailCOntroller {
             ], 500);
         }
     }
-
     public function documentUploadToUserEmailController($req, $res) {
         try {
             $body = $req->getParsedBody();
@@ -414,7 +507,7 @@ class SendEmailCOntroller {
             ], 500);
         }
     }
-
+    
     public function sendLeaseLinkController($req, $res) {
         try {
             $body = $req->getParsedBody();

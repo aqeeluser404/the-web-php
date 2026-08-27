@@ -11,7 +11,7 @@ return function (App $app) {
     $app->post('/api/application/draft', [ApplicationDraftController::class, 'saveApplicationDraftController']);
 
     $app->get('/api/application/draft/{id}', [ApplicationDraftController::class, 'getApplicationDraftController']);
-
+    
     $app->get('/api/application/drafts', [ApplicationDraftController::class, 'getAllDraftsController']);
 
     $app->delete('/api/rentals/application-draft/{id}', [ApplicationDraftController::class, 'deleteApplicationDraftController']);

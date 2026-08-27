@@ -62,45 +62,22 @@ class TokenChecker {
 
         foreach ($users as $user) {
             logMessage("Processing user ID: {$user['_id']}");
-            
-            $refreshToken = $user['loginInfo']['refreshToken'] ?? null;
             $token = $user['loginInfo']['loginToken'] ?? "No token found";
             logMessage("User Token: {$token}");
 
             if ($token && $token !== "No token found") {
                 try {
                     JWT::decode($token, new Key($_ENV['JWT_SECRET'], 'HS256'));
-                    logMessage("Token for user {$user['_id']} is VALID.");
+                    logMessage("✅ Token for user {$user['_id']} is VALID.");
                 } catch (Exception $e) {
-                    logMessage("Token for user {$user['_id']} is INVALID or EXPIRED: " . $e->getMessage());
+                    logMessage("❌ Token for user {$user['_id']} is INVALID or EXPIRED: " . $e->getMessage());
 
                     if ($e instanceof \Firebase\JWT\ExpiredException) {
                         $this->userModel->updateOne(
                             ['_id' => $user['_id']],
                             ['$set' => ['loginInfo.isLoggedIn' => false, 'loginInfo.loginToken' => null]]
                         );
-                        logMessage("User {$user['_id']} logged out due to expired token.");
-                        $this->callLogoutEndpoint($user['_id']);
-                    }
-                }
-            }
-
-            if ($refreshToken) {
-                try {
-                    JWT::decode($refreshToken, new Key($_ENV['JWT_SECRET'], 'HS256'));
-                    logMessage("Refresh token for user {$user['_id']} is VALID.");
-                } catch (Exception $e) {
-                    logMessage("Refresh token for user {$user['_id']} is INVALID or EXPIRED: " . $e->getMessage());
-                    if ($e instanceof \Firebase\JWT\ExpiredException) {
-                        $this->userModel->updateOne(
-                            ['_id' => $user['_id']],
-                            ['$set' => [
-                                'loginInfo.isLoggedIn' => false,
-                                'loginInfo.loginToken' => null,
-                                'loginInfo.refreshToken' => null
-                            ]]
-                        );
-                        logMessage("User {$user['_id']} logged out due to expired refresh token.");
+                        logMessage("🔴 User {$user['_id']} logged out due to expired token.");
                         $this->callLogoutEndpoint($user['_id']);
                     }
                 }
@@ -127,12 +104,68 @@ class TokenChecker {
         }
     }
 
+    // private function checkRentalsToEnd() {
+    //     logMessage("========== RENTAL CHECK STARTED ==========");
+        
+    //     $now = new DateTime();
+    //     logMessage("Current Time: {$now->format('Y-m-d H:i:s')}");
+
+    //     try {
+    //         $query = [
+    //             'status' => 'Active',
+    //             'rentalEndDate' => ['$lte' => new MongoDB\BSON\UTCDateTime($now->getTimestamp() * 1000)]
+    //         ];
+    //         $cursor = $this->rentalModel->find($query);
+    //         $rentalsToEnd = iterator_to_array($cursor);
+    //         $count = count($rentalsToEnd);
+
+    //         logMessage("Found {$count} rentals to process.");
+
+    //         if ($count === 0) {
+    //             logMessage("No active rentals past their end date found.");
+    //             logMessage("========== RENTAL CHECK COMPLETED ==========");
+    //             logMessage(PHP_EOL . PHP_EOL);
+    //             return;
+    //         }
+
+    //         foreach ($rentalsToEnd as $rental) {
+    //             $rentalId = (string) $rental['_id'];
+    //             $endDate = $rental['rentalEndDate'] instanceof MongoDB\BSON\UTCDateTime 
+    //                 ? $rental['rentalEndDate']->toDateTime()->format('Y-m-d H:i:s')
+    //                 : (string) $rental['rentalEndDate'];
+
+    //             logMessage("Processing Rental ID: {$rentalId}");
+    //             logMessage("- End Date: {$endDate}");
+    //             logMessage("- Unit ID: " . (string) $rental['unit']);
+    //             logMessage("- User ID: " . (string) $rental['user']);
+
+    //             try {
+    //                 logMessage("Attempting to end rental...");
+    //                 $result = $this->rentalService->endRentalService($rentalId);
+    //                 logMessage("✅ Rental ended successfully. Result: " . json_encode($result));
+    //             } catch (Exception $e) {
+    //                 logMessage("❌ ERROR ending rental: " . $e->getMessage());
+    //                 continue;
+    //             }
+
+    //             logMessage("--------------------");
+    //         }
+
+    //         logMessage("========== RENTAL CHECK COMPLETED ==========");
+    //         logMessage(PHP_EOL . PHP_EOL);
+    //     } catch (Exception $e) {
+    //         logMessage("🚨 CRITICAL ERROR IN RENTAL CHECK: " . $e->getMessage());
+    //         logMessage("========== RENTAL CHECK FAILED ==========");
+    //         logMessage(PHP_EOL . PHP_EOL);
+    //     }
+    // }
+    
     private function checkRentalsToEnd() {
         logMessage("========== RENTAL CHECK STARTED ==========");
-
+    
         $now = new DateTime();
         logMessage("Current Time: {$now->format('Y-m-d H:i:s')}");
-
+    
         try {
             // Query rentals with UTCDateTime end dates
             $query = [
@@ -143,13 +176,13 @@ class TokenChecker {
             ];
             $cursor = $this->rentalModel->find($query);
             $rentalsToEnd = iterator_to_array($cursor);
-
+    
             // Also check rentals where rentalEndDate is stored as string
             $stringDateRentals = $this->rentalModel->find([
                 'status' => 'Active',
                 'rentalEndDate' => ['$type' => 'string']
             ]);
-
+    
             foreach ($stringDateRentals as $rental) {
                 try {
                     $endDateObj = new DateTime($rental['rentalEndDate']);
@@ -157,47 +190,47 @@ class TokenChecker {
                         $rentalsToEnd[] = $rental;
                     }
                 } catch (Exception $e) {
-                    logMessage("Skipped rental {$rental['_id']} due to invalid date format: {$rental['rentalEndDate']}");
+                    logMessage("⚠️ Skipped rental {$rental['_id']} due to invalid date format: {$rental['rentalEndDate']}");
                 }
             }
-
+    
             $count = count($rentalsToEnd);
             logMessage("Found {$count} rentals to process.");
-
+    
             if ($count === 0) {
                 logMessage("No active rentals past their end date found.");
                 logMessage("========== RENTAL CHECK COMPLETED ==========");
                 logMessage(PHP_EOL . PHP_EOL);
                 return;
             }
-
+    
             foreach ($rentalsToEnd as $rental) {
                 $rentalId = (string) $rental['_id'];
                 $endDate = $rental['rentalEndDate'] instanceof MongoDB\BSON\UTCDateTime
                     ? $rental['rentalEndDate']->toDateTime()->format('Y-m-d H:i:s')
                     : (string) $rental['rentalEndDate'];
-
+    
                 logMessage("Processing Rental ID: {$rentalId}");
                 logMessage("- End Date: {$endDate}");
                 logMessage("- Unit ID: " . (string) $rental['unit']);
                 logMessage("- User ID: " . (string) $rental['user']);
-
+    
                 try {
                     logMessage("Attempting to end rental...");
                     $result = $this->rentalService->endRentalService($rentalId);
-                    logMessage("Rental ended successfully. Result: " . json_encode($result));
+                    logMessage("✅ Rental ended successfully. Result: " . json_encode($result));
                 } catch (Exception $e) {
-                    logMessage("ERROR ending rental: " . $e->getMessage());
+                    logMessage("❌ ERROR ending rental: " . $e->getMessage());
                     continue;
                 }
-
+    
                 logMessage("--------------------");
             }
-
+    
             logMessage("========== RENTAL CHECK COMPLETED ==========");
             logMessage(PHP_EOL . PHP_EOL);
         } catch (Exception $e) {
-            logMessage("CRITICAL ERROR IN RENTAL CHECK: " . $e->getMessage());
+            logMessage("🚨 CRITICAL ERROR IN RENTAL CHECK: " . $e->getMessage());
             logMessage("========== RENTAL CHECK FAILED ==========");
             logMessage(PHP_EOL . PHP_EOL);
         }

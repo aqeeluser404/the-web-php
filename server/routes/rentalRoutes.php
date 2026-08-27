@@ -50,12 +50,12 @@ return function (App $app) {
     $app->put('/api/admin/rentals/{id}/end', [RentalController::class, 'earlyEndRentalController']) // PUT UPDATE->RENTAL->ID
     ->add(new AdminAuthorizationMiddleware())
     ->add(new AuthenticationMiddleware());
-
+    
     // For docs ----------------------------------------------------------------------------------------------------
 
     $app->get('/api/docs/users/{id}/rentals', [RentalController::class, 'findAllMyRentalsController']); // GET FINDALL->RENTALS->USER
 
-    // Public endpoints (no auth)
     $app->post('/api/auth/validate-signer', [RentalController::class, 'validateSignerTokenController']);
+    
     $app->post('/api/auth/verify-signer-email', [RentalController::class, 'verifySignerEmailController']);
 };

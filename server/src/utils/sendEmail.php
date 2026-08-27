@@ -10,19 +10,16 @@ use Dotenv\Dotenv;
 $dotenv = Dotenv::createImmutable(__DIR__ . '/../../../');
 $dotenv->load();
 
-class EmailService
-{
+class EmailService {
     private $transporter;
     private $bypassTransporter;
-
-    public function __construct()
-    {
+    
+    public function __construct() {
         $this->transporter = MailTransport::createMailTransporterWrapper();
         $this->bypassTransporter = new AmazonBypassTransporter();
     }
 
-    public function sendOtpEmail($user, $otp)
-    {
+    public function sendOtpEmail($user, $otp) {
         $mail = $this->transporter;
 
         $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
@@ -47,6 +44,38 @@ class EmailService
             throw new Exception('Failed to send OTP email');
         }
     }
+
+    // public function verifyEmail($user) {
+    //     $mail = $this->transporter;
+
+    //     $verificationLink = $_ENV['HOST_LINK_0'] . '/verify-email?token=' . $user['verification']['verificationToken'];
+    //     $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
+    //     $mail->addAddress($user['email']);
+    //     $mail->Subject = 'Verify Email';
+    //     $mail->Body = "
+    //         <p>Dear {$user['firstName']},</p>
+    //         <p>We have received your request for email verification.</p>
+    //         <p> 
+    //             To complete the verification process, please click the link below:<br>
+    //             <strong>Email Verification Link: </strong><a href=\"{$verificationLink}\">Verify Email</a><br>
+    //             If you did not initiate this request, please disregard this message.
+    //         </p>
+    //         <p>
+    //             For enquiries you can email us at <a href=\"mailto:" . $_ENV['BUSINESS_EMAIL_ADDRESS'] . "\">" . $_ENV['BUSINESS_EMAIL_ADDRESS'] . "</a>
+    //         </p>
+    //         <p>
+    //             Best regards,<br>
+    //             The-WEB Team
+    //         </p>
+    //     ";
+
+    //     try {
+    //         $mail->send();
+    //         echo 'Email sent successfully!';
+    //     } catch (Exception $e) {
+    //         echo 'Mailer Error: ' . $mail->ErrorInfo;
+    //     }
+    // }
 
     public function verifyEmail($user, $type = 'user')
     {
@@ -100,8 +129,7 @@ class EmailService
         }
     }
 
-    public function sendResetEmail($user, $token)
-    {
+    public function sendResetEmail($user, $token) {
         $mail = $this->transporter;
 
         $resetLink = $_ENV['HOST_LINK_0'] . '/reset-password?token=' . $token;
@@ -133,8 +161,7 @@ class EmailService
         }
     }
 
-    public function getInContactEmail($userContact, $message)
-    {
+    public function getInContactEmail($userContact, $message) {
         $mail = $this->transporter;
 
         $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
@@ -163,52 +190,39 @@ class EmailService
         }
     }
 
-    public function rentalApplicationEmail($user, $documentUrls = [], $rental = null)
-    {
-        $mail = $this->transporter;
+    public function rentalApplicationEmailController($req, $res) {
+        try {
+            $body = $req->getParsedBody();
+            $userId = $body['userId'] ?? null;
 
-        $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
-        $mail->addAddress($_ENV['BUSINESS_EMAIL_ADDRESS']);
+            $user = $this->userCollection->findOne(['_id' => new ObjectId($userId)]);
+            if (!$user) {
+                return $this->respond($res, ['error' => 'User not found.'], 400);
+            }
 
-        $mail->Subject = "Application created by {$user['firstName']}";
+            $rental = $this->rentalCollection->findOne([
+                'user' => new ObjectId($userId),
+                'status' => 'Pending'
+            ]);
 
-        // Build document links section
-        $documentsHtml = '';
-        if (!empty($documentUrls)) {
-            $documentsHtml = "<h3>📎 Attached Documents:</h3><ul>";
-            foreach ($documentUrls as $index => $url) {
-                if ($url) {
-                    $documentsHtml .= "<li><a href='{$url}' target='_blank'>Document " . ($index + 1) . "</a></li>";
+            $documentUrls = [];
+            if ($rental && isset($rental['documents'])) {
+                foreach ($rental['documents'] as $doc) {
+                    if (isset($doc['documentUrl'])) {
+                        $documentUrls[] = $doc['documentUrl'];
+                    }
                 }
             }
-            $documentsHtml .= "</ul>";
-        }
 
-        $mail->Body = "
-            <p>Dear The-WEB Team,</p>
-            <p>You have received a new application from The-WEB.</p>
-            <p>
-                <strong>First Name:</strong> {$user['firstName']}<br>
-                <strong>Last Name:</strong> {$user['lastName']}<br>
-                <strong>Username:</strong> {$user['username']}<br>
-                <strong>Email:</strong> {$user['email']}<br>
-                " . ($rental ? "<strong>Rental ID:</strong> " . (string) $rental['_id'] . "<br>" : "") . "
-            </p>
-            {$documentsHtml}
-            <p>
-                Best regards,<br>
-                The-WEB Team
-            </p>
-        ";
-
-        try {
-            $mail->send();
-            echo "Email sent successfully!";
+            $this->emailService->rentalApplicationEmail($user, $documentUrls, $rental);
+            return $this->respond($res, ['message' => 'Message sent successfully.'], 200);
         } catch (Exception $e) {
-            echo "Mailer Error: " . $mail->ErrorInfo;
+            return $this->respond($res, [
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
-
+    
     // public function rentalApplicationToUserEmail($user) {
     //     $mail = $this->transporter;
 
@@ -217,7 +231,7 @@ class EmailService
     //     $mail->Subject = 'Rental Application Created';
 
     //     $applicationLink = $_ENV['HOST_LINK_2'] . '/digital-application?userId=' . $user['_id']; 
-
+        
     //     $mail->Body = "
     //         <p>Dear {$user['firstName']},</p>
     //         <p>Your rental application at The-WEB has been created.</p>
@@ -252,17 +266,23 @@ class EmailService
     //     }
     // }
 
-
-    public function rentalApplicationToUserEmail($user, $tenantLink = null, $guardianLink = null, $guardianEmail = null)
-    {
+    public function rentalApplicationToUserEmail($user, $tenantLink = null, $guardianLink = null, $guardianEmail = null) {
         $mail = $this->transporter;
         $mail->clearAddresses();
         $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
         $mail->addAddress($user['email']);
         $mail->Subject = 'Rental Application Created';
 
+        // $applicationLink = $_ENV['HOST_LINK_0'] . '/digital-application?userId=' . $user['_id']; 
+            // " . ($guardianLink ? "
+            // <p>
+            //     <strong>Guardian Signature Required:</strong><br>
+            //     Please forward this link to the guardian for their signature:<br>
+            //     <a href=\"{$guardianLink}\">Guardian Signature Link</a>
+            // </p>
+            // " : "") . "
         $applicationLink = $tenantLink ?? $_ENV['HOST_LINK_0'] . '/digital-application?userId=' . $user['_id'];
-
+            
         $mail->Body = "
             <p>Dear {$user['firstName']},</p>
             <p>Your rental application at The-WEB has been created.</p>
@@ -271,32 +291,28 @@ class EmailService
                 Our team will review your details and get in touch with you shortly regarding the next steps.<br> 
                 We appreciate your interest and look forward to helping you find the perfect rental solution.
             </p>
+
             <p>
                 Please complete your credit check application here: <a href=\"{$applicationLink}\">Complete Application</a>
             </p>
-
+            
             <p><strong>Credit Check Payment</strong></p>
             <p>
                 A fee of <strong>R250.00</strong> is required to process your credit check application.<br>
                 Please use the following banking details to make your payment:
             </p>
             <p>
-                <strong>Banking Details for Credit Check Payment</strong><br><br>
-                <strong>Legal entity name:</strong> Trafalgar Property Management (Pty) Ltd.<br>
-                <strong>Trading as:</strong> null<br>
-                <strong>Registration number:</strong> 1989/003678/07<br>
-                <strong>Name of the account:</strong> TRAFALGAR-TRUST ITOS54(1) OF P<br>
-                <strong>Account number:</strong> 270739335<br>
-                <strong>Type of account:</strong> Business Cheque Account<br>
-                <strong>Branch name:</strong> Thibault square<br>
-                <strong>Branch code:</strong> 020909<br>
+                <strong>Bank:</strong> Nedbank<br>
+                <strong>Account Holder:</strong> The-WEB<br>
+                <strong>Account Number:</strong> 1234567890<br>
+                <strong>Branch Code:</strong> 198765<br>
                 <strong>Reference:</strong> 400K0001005<br>
                 <strong>Amount:</strong> R250.00
             </p>
             <p>
                 <strong>Please use the reference number 400K0001005 when making your payment.</strong>
             </p>
-            
+
             <p>
                 For enquiries you can email us at <a href=\"mailto:" . $_ENV['BUSINESS_EMAIL_ADDRESS'] . "\">" . $_ENV['BUSINESS_EMAIL_ADDRESS'] . "</a>
             </p>
@@ -313,24 +329,7 @@ class EmailService
         }
     }
 
-    // $applicationLink = $_ENV['HOST_LINK_0'] . '/digital-application?userId=' . $user['_id']; 
-    // " . ($guardianLink ? "
-    // <p>
-    //     <strong>Guardian Signature Required:</strong><br>
-    //     Please forward this link to the guardian for their signature:<br>
-    //     <a href=\"{$guardianLink}\">Guardian Signature Link</a>
-    // </p>
-    // " : "") . "
-
-    // banking details
-    // reference number: 400K0001005
-    // Document upload for Credit Check of proof of payment total R250
-
-    // they must upload proof of payment for the credit check of 250 after signing
-    // application fee proof of payment
-
-    public function sendGuardianInviteEmail($guardianEmail, $guardianLink, $guardianName, $tenantName)
-    {
+    public function sendGuardianInviteEmail($guardianEmail, $guardianLink, $guardianName, $tenantName) {
         $mail = $this->transporter;
         $mail->clearAddresses();
         $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
@@ -347,32 +346,24 @@ class EmailService
                 If the button doesn't work, copy and paste this link into your browser:<br>
                 <a href=\"{$guardianLink}\">{$guardianLink}</a>
             </p>
-
+            
             <p><strong>Credit Check Payment</strong></p>
             <p>
                 A fee of <strong>R250.00</strong> is required to process your credit check application.<br>
                 Please use the following banking details to make your payment:
             </p>
             <p>
-                <strong>Banking Details for Credit Check Payment</strong><br><br>
-                <strong>Legal entity name:</strong> Trafalgar Property Management (Pty) Ltd.<br>
-                <strong>Trading as:</strong> null<br>
-                <strong>Registration number:</strong> 1989/003678/07<br>
-                <strong>Name of the account:</strong> TRAFALGAR-TRUST ITOS54(1) OF P<br>
-                <strong>Account number:</strong> 270739335<br>
-                <strong>Type of account:</strong> Business Cheque Account<br>
-                <strong>Branch name:</strong> Thibault square<br>
-                <strong>Branch code:</strong> 020909<br>
+                <strong>Bank:</strong> Nedbank<br>
+                <strong>Account Holder:</strong> The-WEB<br>
+                <strong>Account Number:</strong> 1234567890<br>
+                <strong>Branch Code:</strong> 198765<br>
                 <strong>Reference:</strong> 400K0001005<br>
                 <strong>Amount:</strong> R250.00
             </p>
             <p>
                 <strong>Please use the reference number 400K0001005 when making your payment.</strong>
             </p>
-            <p>
-                <strong>Important:</strong> Once your payment has been made, please upload your proof of payment to your profile under the documents section. This will allow us to confirm your payment and proceed with your application.
-            </p>
-
+            
             <p>
                 For enquiries you can email us at <a href=\"mailto:" . $_ENV['BUSINESS_EMAIL_ADDRESS'] . "\">" . $_ENV['BUSINESS_EMAIL_ADDRESS'] . "</a>
             </p>
@@ -383,6 +374,7 @@ class EmailService
         ";
 
         try {
+            error_log('Recipients about to send to: ' . print_r($mail->getToAddresses(), true));
             $mail->send();
             echo 'Email sent successfully!';
         } catch (Exception $e) {
@@ -390,8 +382,7 @@ class EmailService
         }
     }
     
-    public function documentUploadToUserEmail($user)
-    {
+    public function documentUploadToUserEmail($user) {
         $mail = $this->transporter;
 
         $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
@@ -423,12 +414,11 @@ class EmailService
         }
     }
 
-    public function documentUploadEmail($user)
-    {
+    public function documentUploadEmail($user) {
         $mail = $this->transporter;
 
         $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
-        $mail->addAddress($_ENV['BUSINESS_EMAIL_ADDRESS']);
+        $mail->addAddress($_ENV['BUSINESS_EMAIL_ADDRESS']); 
 
         $mail->Subject = "Documents uploaded by {$user['firstName']}";
         $mail->Body = "
@@ -452,8 +442,7 @@ class EmailService
         }
     }
 
-    public function rentalNotificationEmail($user, $unit, $rental)
-    {
+    public function rentalNotificationEmail($user, $unit, $rental) {
         $mail = $this->transporter;
 
         // Format the rental start date
@@ -499,8 +488,8 @@ class EmailService
         }
     }
 
-    public function sendRentalActionReminderEmail($user, $message)
-    {
+    // NEW FUNCTION - ADD TO EXPRESS
+    public function sendRentalActionReminderEmail($user, $message) {
         $mail = $this->transporter;
 
         $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
@@ -528,9 +517,8 @@ class EmailService
             echo 'Mailer Error: ' . $mail->ErrorInfo;
         }
     }
-
-    public function sendLeaseSigningLink($to, $name, $link, $rentalId, $role = 't76y')
-    {
+    
+    public function sendLeaseSigningLink($to, $name, $link, $rentalId, $role = 't76y') {
         $mail = $this->transporter;
 
         $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
@@ -574,8 +562,7 @@ class EmailService
         }
     }
 
-    public function sendRentalRejectionEmail($user, $message)
-    {
+    public function sendRentalRejectionEmail($user, $message) {
         $mail = $this->transporter;
 
         $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
@@ -603,23 +590,22 @@ class EmailService
         }
     }
 
-    public function sendExtendedDateEmail($user, $message)
-    {
+    public function sendExtendedDateEmail($user, $message) {
         $mail = $this->transporter;
-
+    
         // Ensure $message is a string before using json_decode
         if (is_array($message)) {
             // Convert array to a JSON string
             $message = json_encode($message);
         }
-
+    
         // Decode JSON message and extract the date
         $decodedMessage = json_decode($message, true);
         $date = isset($decodedMessage['message']) ? $decodedMessage['message'] : null;
-
+    
         // Format the date into "31 Jan 2025"
         $formattedDate = $date ? date('d M Y', strtotime($date)) : 'Invalid date';
-
+    
         $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');
         $mail->addAddress($user['email']);
         $mail->Subject = 'Rental Application Extended';
@@ -638,7 +624,7 @@ class EmailService
                 The-WEB Team
             </p>
         ";
-
+    
         try {
             $mail->send();
             echo 'Extension email sent successfully!';
@@ -648,13 +634,12 @@ class EmailService
     }
 
     // NEW FUNCTION - ADD TO EXPRESS
-    public function sendVendorEmail($user, $callLog)
-    {
+    public function sendVendorEmail($user, $callLog) {
         $mail = $this->transporter;
 
         // Format the request creation date
-        $formattedStartDate = isset($callLog['createdAt'])
-            ? date('d M Y', strtotime($callLog['createdAt']))
+        $formattedStartDate = isset($callLog['createdAt']) 
+            ? date('d M Y', strtotime($callLog['createdAt'])) 
             : '[Start Date Not Specified]';
 
         $mail->setFrom($_ENV['BUSINESS_EMAIL_ADDRESS'], 'The-WEB');

@@ -67,8 +67,8 @@ class CallLog {
         $this->updates = array_map(function($u) {
             return array_merge([
                 'updateInfo' => null,
-                'addedAt'    => new UTCDateTime(),
-                'user'       => $u['user'] ?? null
+                'addedAt' => new UTCDateTime(),
+                'user'     => $update['user'] ?? null
             ], $u);
         }, $updates);
 
