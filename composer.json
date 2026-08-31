@@ -25,5 +25,8 @@
     },
     "scripts": {
         "serve": "php -S localhost:5000 -t server server/index.php"
+    },
+    "config": {
+        "process-timeout": 0
     }
 }

@@ -111,7 +111,6 @@ class Rental {
         $this->trafalgarId = $trafalgarId;
         $this->unitYear = $unitYear;
 
-        // Ensure payerData has default values in the correct order
         $this->payerData = array_merge([
             'firstName' => '',
             'lastName' => '',
@@ -123,22 +122,15 @@ class Rental {
             'isValidated' => false
         ], $payerData);
 
-        // Default parking data if not provided
         $this->parking = array_merge([
             'hasParking' => false,
-            'fee' => 50.0 // Placeholder fee
+            'fee' => 50.0
         ], $parking ?? []);
         
         $this->shuttle = array_merge([
             'hasShuttle' => false,
-            'fee' => 50.0 // Placeholder fee
+            'fee' => 50.0
         ], $shuttle ?? []);
-
-        // $this->signature = array_merge([
-        //     'imageUrl' => $image['imageUrl'] ?? '',
-        //     'fileId' => $image['fileId'] ?? '',
-        //     '_id' => $image['_id'] ?? new ObjectId()
-        // ], $signature)
 
         $this->signature = $signature ? [
             'imageUrl' => $signature['imageUrl'] ?? '',

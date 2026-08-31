@@ -12,29 +12,14 @@ class CallLog {
     public $closedAt;
     public $user;
 
-
     public $images;
     public $unit;
     public $description;
     public $summary;
     public $updates;
 
-
-
-
     public $vendorInfo;  
     public $vendorNotes;
-
-
-
-
-
-        // TheWeb@trafalgar.co.za
-
-        // unit 
-        // description  limit 30 char
-        // summary 100 char
-        // updates 100 char []
 
     public function __construct(
         $logNumber,

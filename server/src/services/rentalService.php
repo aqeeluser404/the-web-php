@@ -42,26 +42,20 @@ class RentalService
         return null;
     }
 
+    // ─── CORRECTING HANDLERS ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
     public function syncRentalService(): bool
     {
         try {
             $units = $this->unitCollection->find();
-    
-            // $excludedUnits = [
-            //     '1-01','1-02','1-03','1-08',
-            //     '2-01','2-02','2-03','2-08',
-            //     '3-01','3-02','3-03','3-08'
-            // ];
-    
             foreach ($units as $unit) {
                 $unitId = (string) $unit['_id'];
                 $unitNumber = $unit['unitNumber'] ?? null;
                 error_log("---- Syncing unit {$unitNumber} ({$unitId}) ----");
     
-                // Query rentals by string unit id
                 $rentals = $this->rentalCollection->find(['unit' => $unitId]);
                 $normalizedRentals = [];
-    
+
                 foreach ($rentals as $doc) {
                     $selected = $doc['selectedSubUnits'] ?? null;
 
@@ -72,7 +66,7 @@ class RentalService
                     $normalizedRentals[] = [
                         '_id' => (string) $doc['_id'],
                         'status' => $doc['status'] ?? null,
-                        'user' => (string) ($doc['user'] ?? ''), // store user id
+                        'user' => (string) ($doc['user'] ?? ''), 
                         'unitType' => $unitTypeForRental,
                         'selectedSubUnits' => [
                             'type' => $selected['type'] ?? null,
@@ -83,7 +77,6 @@ class RentalService
                         ],
                     ];
                 }
-    
                 error_log("Found " . count($normalizedRentals) . " rentals for unit.");
     
                 // Filter active rentals
@@ -119,36 +112,6 @@ class RentalService
                 $capacity = $unit['unitOccupants'] ?? 0;
                 $unitStatus = ($currentOccupants >= $capacity) ? 'Occupied' : 'Available';
     
-                // 5. Gender assignment (only for non-excluded units)
-                // if (!in_array($unitNumber, $excludedUnits) && count($activeRentals) > 0) {
-                //     // Get first active rental's user
-                //     $firstRental = reset($activeRentals);
-                //     $userId = $firstRental['user'];
-    
-                //     if (!empty($userId)) {
-                //         $userDoc = $this->userCollection->findOne(['_id' => new ObjectId($userId)]);
-                //         $firstGender = $userDoc['gender'] ?? null;
-    
-                //         if (empty($unit['genderAssignment']) && $firstGender) {
-                //             // Assign gender based on first active rental
-                //             $this->unitCollection->updateOne(
-                //                 ['_id' => $unit['_id']],
-                //                 ['$set' => ['genderAssignment' => $firstGender]]
-                //             );
-                //             error_log("Assigned gender {$firstGender} to unit {$unitNumber}");
-                //         } elseif (!empty($unit['genderAssignment'])) {
-                //             foreach ($activeRentals as $r) {
-                //                 $userDoc = $this->userCollection->findOne(['_id' => new ObjectId($r['user'])]);
-                //                 $gender = $userDoc['gender'] ?? null;
-                //                 if ($gender && $gender !== $unit['genderAssignment']) {
-                //                     error_log("Conflict: unit {$unitNumber} is {$unit['genderAssignment']} only, but rental {$r['_id']} is {$gender}");
-                //                     throw new Exception("Unit {$unitNumber} is only available for {$unit['genderAssignment']}s.");
-                //                 }
-                //             }
-                //         }
-                //     }
-                // }
-    
                 // Apply update
                 $updateData = [
                     'currentOccupants' => $currentOccupants,
@@ -163,7 +126,6 @@ class RentalService
                     ['$set' => $updateData]
                 );
             }
-    
             return true;
         } catch (Exception $e) {
             error_log('SyncRentalService error: ' . $e->getMessage());
@@ -171,235 +133,121 @@ class RentalService
         }
     }
 
+    public function reassignUnitService($reassignDetails) {
+        try {
+            $rentalToUpdate = $this->rentalCollection->findOne([
+                '_id' => new ObjectId($reassignDetails['rentalId'])
+            ]);
+            if (!$rentalToUpdate) {
+                throw new Exception('Rental not found');
+            }
+            $unitDoc = $this->unitCollection->findOne([
+                '_id' => new ObjectId($reassignDetails['newUnitId'])
+            ]);
+            if (!$unitDoc) {
+                throw new Exception('Target unit not found');
+            }
+            $newSubUnit = $reassignDetails['newSubUnit'] ?? null;
+            if (!$newSubUnit) {
+                throw new Exception('New subunit details missing');
+            }
+            // Update rental with full subUnit details (including price plan)
+            $unitTypeForRental = $newSubUnit['roomType'] 
+                ?? $newSubUnit['bedType'] 
+                ?? $unitDoc['unitType'];
+            $updateData = [
+                'unit' => $unitDoc['_id'],
+                'unitType' => $unitTypeForRental,
+                'selectedSubUnits' => [
+                    'type' => $newSubUnit['type'] ?? null,
+                    'roomType' => $newSubUnit['roomType'] ?? null,
+                    'bedType' => $newSubUnit['bedType'] ?? null,
+                    'price' => $newSubUnit['price'] ?? null,
+                    'isAvailable' => false
+                ]
+            ];
+            // Calculate total rental price (subUnit price + parking fee based on plan)
+            $basePrice = $newSubUnit['price']['price'] ?? 0.0;
+            $parkingFee = 0.0;
+            if (!empty($rentalToUpdate['parking']) && !empty($rentalToUpdate['parking']['hasParking'])) {
+                $planName = $newSubUnit['price']['name'] ?? null;
 
-    // public function createRentalService(array $rentalDetails, array $signatureImage) {
-    //     try {
-    //         // Validate unit and user exist
-    //         $unit = $this->unitCollection->findOne(['_id' => new ObjectId($rentalDetails['unit'])]);
-    //         $user = $this->userCollection->findOne(['_id' => new ObjectId($rentalDetails['user'])]);
+                if ($planName === '10-month') {
+                    $parkingFee = 495.0;
+                } elseif ($planName === '11-month') {
+                    $parkingFee = 450.0;
+                } elseif ($planName === 'annual') {
+                    $parkingFee = 4950.0;
+                } else {
+                    $parkingFee = $rentalToUpdate['parking']['fee'] ?? 0.0;
+                }
+                // Update the rental's parking fee field as well
+                $updateData['parking'] = $rentalToUpdate['parking'];
+                $updateData['parking']['fee'] = $parkingFee;
+            }
+            $updateData['rentalPrice'] = $basePrice + $parkingFee;
+            $this->rentalCollection->updateOne(
+                ['_id' => $rentalToUpdate['_id']],
+                ['$set' => $updateData]
+            );
 
-    //         if (!$unit) {
-    //             throw new Exception('Unit not found');
-    //         }
-    //         if (!$user) {
-    //             throw new Exception('User not found');
-    //         }
+            // Only update unit availability if rental is Active
+            if ($rentalToUpdate['status'] === 'Active') {
+                $oldUnitId = $rentalToUpdate['unit'];
+                $oldSubUnit = $rentalToUpdate['selectedSubUnits'] ?? null;
+                if ($oldSubUnit) {
+                    $criteria = ['_id' => new ObjectId($oldUnitId)];
+                    if (!empty($oldSubUnit['bedType'])) {
+                        $criteria['subUnits.bedType'] = $oldSubUnit['bedType'];
+                    } elseif (!empty($oldSubUnit['roomType'])) {
+                        $criteria['subUnits.roomType'] = $oldSubUnit['roomType'];
+                    }
+                    $this->unitCollection->updateOne(
+                        $criteria,
+                        [
+                            '$set' => ['subUnits.$.isAvailable' => true],
+                            '$inc' => ['currentOccupants' => -1]
+                        ]
+                    );
+                }
+                // Occupy new unit subUnit
+                $criteria = ['_id' => new ObjectId($unitDoc['_id'])];
+                if (!empty($newSubUnit['bedType'])) {
+                    $criteria['subUnits.bedType'] = $newSubUnit['bedType'];
+                } elseif (!empty($newSubUnit['roomType'])) {
+                    $criteria['subUnits.roomType'] = $newSubUnit['roomType'];
+                }
+                $this->unitCollection->updateOne(
+                    $criteria,
+                    [
+                        '$set' => ['subUnits.$.isAvailable' => false],
+                        '$inc' => ['currentOccupants' => 1]
+                    ]
+                );
+            }
+            error_log("Rental {$rentalToUpdate['_id']} reassigned to unit {$unitDoc['unitNumber']} (status: {$rentalToUpdate['status']})");
+            return $this->rentalCollection->findOne(['_id' => new ObjectId($rentalToUpdate['_id'])]);
+        } catch (Exception $e) {
+            error_log('Service error: ' . $e->getMessage());
+            throw $e;
+        }
+    }
 
-    //         // NEW RESERVATION CHECK (add just these 4 lines)
-    //         if (isset($unit['reservedBy']) && (string)$unit['reservedBy'] !== $rentalDetails['user']) {
-    //             throw new Exception('Unit is reserved by another user');
-    //         }
-    //         if ($unit['currentOccupants'] >= $unit['unitOccupants']) {
-    //             throw new Exception('Unit is already at full capacity');
-    //         }
-
-    //         // Find rentals associated with this user 
-    //         $existingRentals = $this->rentalCollection->find([
-    //             'user' => new ObjectId($rentalDetails['user']),
-    //             'status' => ['$in' => ['Pending', 'Active']]
-    //         ]);
-
-    //         if (iterator_count($existingRentals) > 0) {
-    //             throw new Exception('User already has an active or pending rental');
-    //         }
-
-    //         // Handle access key and gender assignment
-    //         $accessKey = null;
-    //         $accessKeyIsTrue = isset($rentalDetails['accessKeyIsTrue']) 
-    //             ? filter_var($rentalDetails['accessKeyIsTrue'], FILTER_VALIDATE_BOOLEAN)
-    //             : false;
-
-    //         if ($accessKeyIsTrue) {
-    //             // if ($unit['accessKey']['isShared'] ?? false) {
-    //             //     if ($rentalDetails['accessKey'] !== $unit['accessKey']['assignedKey']) {
-    //             //         throw new Exception('Invalid access key');
-    //             //     }
-    //             //     $accessKey = $unit['accessKey']['assignedKey'];
-    //             if ($unit['accessKey']['isShared'] ?? false) {
-    //                 if ($rentalDetails['accessKey'] !== $unit['accessKey']['assignedKey']) {
-    //                     throw new Exception('Invalid access key');
-    //                 }
-    //                 $now = new UTCDateTime();
-    //                 if (!isset($unit['accessKey']['expiresAt']) || $now > $unit['accessKey']['expiresAt']) {
-    //                     throw new Exception('Access key has expired');
-    //                 }
-    //                 $accessKey = $unit['accessKey']['assignedKey'];
-    //             } else {
-    //                 $characters = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-    //                 $accessKey = '';
-    //                 for ($i = 0; $i < 6; $i++) {
-    //                     $accessKey .= $characters[random_int(0, strlen($characters) - 1)];
-    //                 }
-    //                 $now = new UTCDateTime();
-    //                 $expiresInHours = 12;
-    //                 $expiresAt = new UTCDateTime($now->toDateTime()->modify("+{$expiresInHours} hours")->getTimestamp() * 1000);
-
-    //                 // $now = new UTCDateTime();
-    //                 // $expiresAt = new UTCDateTime($now->toDateTime()->modify("+1 minutes")->getTimestamp() * 1000);
-
-    //                 $this->unitCollection->updateOne(
-    //                     ['_id' => $unit['_id']],
-    //                     ['$set' => [
-    //                         'accessKey.isShared' => true,
-    //                         'accessKey.assignedKey' => $accessKey,
-    //                         'accessKey.createdAt' => $now,
-    //                         'accessKey.expiresAt' => $expiresAt
-    //                     ]]
-    //                 );
-
-    //             }
-    //         } else {
-
-    //             // -----------------------------------------------------------------------------------------------------------------------------------------
-    //             // Add condition for room units not to include gender assignment
-
-    //             if (!($unit['accessKey']['isShared'] ?? false)) {
-    //                 if (empty($unit['genderAssignment'])) {
-    //                     $this->unitCollection->updateOne(
-    //                         ['_id' => $unit['_id']],
-    //                         ['$set' => ['genderAssignment' => $user['gender']]]
-    //                     );
-    //                 } elseif ($unit['genderAssignment'] !== $user['gender']) {
-    //                     throw new Exception("This unit is only available for {$unit['genderAssignment']}s.");
-    //                 }
-    //             }
-    //         }
-    //         $unit['unitPrice'] = (float)$unit['unitPrice'];
-    //         $unit['_id'] = new ObjectId($unit['_id']);
-    //         $unit['unitType'] = (string)$unit['unitType'];
-    //         $user['_id'] = new ObjectId($user['_id']);
-
-    //         // Handle parking (optional)
-    //         $rawParking = $rentalDetails['parking'] ?? [];
-
-    //         $parking = is_array($rawParking)
-    //             ? $rawParking
-    //             : ['hasParking' => false, 'fee' => 0.0];
-
-    //         if (!isset($parking['fee'])) {
-    //             $parking['fee'] = 50.0;
-    //         }
-
-    //         // handle subunits
-    //         // --------------------------------------------------------------------------------------
-    //         $selectedSubUnit = $rentalDetails['selectedSubUnit'] ?? null;
-
-    //         if (!$selectedSubUnit || !isset($selectedSubUnit['price']) || !isset($selectedSubUnit['type'])) {
-    //             throw new Exception('Selected sub-unit data is missing or invalid');
-    //         }
-    //         $selectedSubUnitData = [
-    //             'type' => $selectedSubUnit['type'],
-    //             'roomType' => $selectedSubUnit['roomType'] ?? null,
-    //             'bedType' => $selectedSubUnit['bedType'] ?? null,
-    //             'price' => (float)$selectedSubUnit['price'] ?? 0.0,
-    //             'isAvailable' => $selectedSubUnit['isAvailable'] ?? true
-    //         ];
-    //         $totalRentalPrice = $selectedSubUnitData['price'] + ($parking['hasParking'] ? $parking['fee'] : 0.0);
-
-
-    //         // IMAGE SIGN UPLOAD
-    //         $signatureFiles = is_array($signatureImage) ? $signatureImage : [$signatureImage];
-
-    //         $signatureUploads = array_map(function($file) {
-    //             if ($file->getError() !== UPLOAD_ERR_OK) {
-    //                 throw new Exception('Invalid signature image upload');
-    //             }
-
-    //             $uploaded = $this->localFileHelper->uploadImage($file);
-    //             return [
-    //                 'imageUrl' => (string) $uploaded['imageUrl'],
-    //                 'fileId' => (string) $uploaded['fileId'],
-    //                 '_id' => new ObjectId()
-    //             ];
-    //         }, $signatureFiles);
-
-    //         $signatureData = $signatureUploads[0]; 
-
-    //         $rental = new Rental(
-    //             rentalStartDate: $rentalDetails['rentalStartDate'] ?? null,
-    //             rentalEndDate: $rentalDetails['rentalEndDate'] ?? null,
-    //             rentalPrice: $totalRentalPrice,
-    //             unit: $unit['_id'],
-    //             unitType: $selectedSubUnitData['roomType'] || $selectedSubUnitData['bedType'] || $unit['unitType'],
-    //             user: $user['_id'],
-    //             accessKey: $accessKey ?? $unit['accessKey']['assignedKey'] ?? null,
-    //             parking: $parking,
-    //             signature: $signatureData,
-    //             selectedSubUnits:  $selectedSubUnitData
-    //         );
-
-    //         $result = $this->rentalCollection->insertOne($rental->toArray());
-    //         $newRental = $this->rentalCollection->findOne(['_id' => $result->getInsertedId()]);
-
-    //         // Update user and unit
-    //         $this->userCollection->updateOne(
-    //             ['_id' => $user['_id']],
-    //             ['$push' => ['rentals' => $newRental['_id']]]
-    //         );
-
-    //         $this->unitCollection->updateOne(
-    //             ['_id' => $unit['_id']],
-    //             ['$push' => ['rentedHistory' => $newRental['_id']]]
-    //         );
-
-    //         // Increment unit occupants
-    //         $this->unitCollection->updateOne(
-    //             ['_id' => $unit['_id']],
-    //             ['$inc' => ['currentOccupants' => 1]]
-    //         );
-
-    //         // Match either roomType or bedType - mark false
-    //         $filter = [
-    //             '_id' => $unit['_id']
-    //         ];
-    //         if ($selectedSubUnitData['roomType']) {
-    //             $filter['subUnits.roomType'] = $selectedSubUnitData['roomType'];
-    //             $updateKey = 'subUnits.$.isAvailable';
-    //         } else {
-    //             $filter['subUnits.bedType'] = $selectedSubUnitData['bedType'];
-    //             $updateKey = 'subUnits.$.isAvailable';
-    //         }
-    //         $this->unitCollection->updateOne(
-    //             $filter,
-    //             ['$set' => [$updateKey => false]]
-    //         );
-
-    //         if (isset($unit['reservedBy'])) {
-    //             $this->unitCollection->updateOne(
-    //                 ['_id' => $unit['_id']],
-    //                 ['$unset' => ['reservedBy' => '', 'reservedAt' => '']]
-    //             );
-    //         }
-
-    //         return [
-    //             'rental' => $newRental,
-    //             'accessKey' => $accessKey
-    //         ];   
-    //     } catch (Exception $e) {
-    //         error_log('RentalService error: ' . $e->getMessage());
-    //         throw $e;
-    //     }
-    // }
-
+    // ─── HANDLERS ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
     public function createRentalService(array $rentalDetails, array $signatureImage, ?array $guardianSignatureImage = null)
     {
         try {
             error_log('unitYear debug — unit: ' . var_export($unit['unitYear'] ?? 'MISSING', true) . ', rentalDetails: ' . var_export($rentalDetails['unitYear'] ?? 'MISSING', true));
-            // -------------------------------
-            // Fetch unit and user
-            // -------------------------------
+
             $unit = $this->unitCollection->findOne(['_id' => new ObjectId($rentalDetails['unit'])]);
             $user = $this->userCollection->findOne(['_id' => new ObjectId($rentalDetails['user'])]);
-
             if (!$unit)
                 throw new Exception('Unit not found');
             if (!$user)
                 throw new Exception('User not found');
 
-            // -------------------------------
             // Reservation and occupancy check
-            // -------------------------------
             if (isset($unit['reservedBy']) && (string) $unit['reservedBy'] !== $rentalDetails['user']) {
                 throw new Exception('Unit is reserved by another user');
             }
@@ -407,9 +255,7 @@ class RentalService
                 throw new Exception('Unit is already at full capacity');
             }
 
-            // -------------------------------
             // Check existing rentals
-            // -------------------------------
             $existingRentals = $this->rentalCollection->find([
                 'user' => new ObjectId($rentalDetails['user']),
                 'status' => ['$in' => ['Pending', 'Active']]
@@ -418,14 +264,11 @@ class RentalService
                 throw new Exception('User already has an active or pending rental');
             }
 
-            // -------------------------------
             // Access key / Gender Assignments
-            // -------------------------------
             $accessKey = null;
             $accessKeyIsTrue = isset($rentalDetails['accessKeyIsTrue'])
                 ? filter_var($rentalDetails['accessKeyIsTrue'], FILTER_VALIDATE_BOOLEAN)
                 : false;
-
             if ($accessKeyIsTrue) {
                 if ($unit['accessKey']['isShared'] ?? false) {
                     if ($rentalDetails['accessKey'] !== $unit['accessKey']['assignedKey']) {
@@ -437,7 +280,6 @@ class RentalService
                     }
                     $accessKey = $unit['accessKey']['assignedKey'];
                 } else {
-                    // Generate new key
                     $characters = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
                     $accessKey = '';
                     for ($i = 0; $i < 6; $i++) {
@@ -458,42 +300,9 @@ class RentalService
                         ]
                     );
                 }
-            } else {
-                // Gender assignment for non-shared units
-                // $excludedUnits = [
-                //     '1-01',
-                //     '1-02',
-                //     '1-03',
-                //     '1-08',
-                //     '2-01',
-                //     '2-02',
-                //     '2-03',
-                //     '2-08',
-                //     '3-01',
-                //     '3-02',
-                //     '3-03',
-                //     '3-08'
-                // ];
+            } else {}
 
-                // $unitIdentifier = $unit['unitNumber'] ?? null;
-
-                // $shouldAssignGender = !in_array($unitIdentifier, $excludedUnits);
-
-                // if ($shouldAssignGender && !($unit['accessKey']['isShared'] ?? false)) {
-                //     if (empty($unit['genderAssignment'])) {
-                //         $this->unitCollection->updateOne(
-                //             ['_id' => $unit['_id']],
-                //             ['$set' => ['genderAssignment' => $user['gender']]]
-                //         );
-                //     } elseif ($unit['genderAssignment'] !== $user['gender']) {
-                //         throw new Exception("This unit is only available for {$unit['genderAssignment']}s.");
-                //     }
-                // }
-            }
-
-            // -------------------------------
             // Handle parking
-            // -------------------------------
             $rawParking = $rentalDetails['parking'] ?? null;
 
             if (is_string($rawParking)) {
@@ -508,26 +317,20 @@ class RentalService
                 $parking['fee'] = 50.0;
             }
             
-            // -------------------------------
             // Handle shuttle (based on user's hasShuttle)
-            // -------------------------------
             $shuttle = [
                 'hasShuttle' => $user['hasShuttle'] ?? false,
                 'fee' => ($user['hasShuttle'] ?? false) ? ($rentalDetails['shuttlePrice'] ?? 50.0) : 0.0
             ];
 
-            // -------------------------------
             // Handle subunit + total price
-            // -------------------------------
             $priceEntries = [];
             $priceName = 'default';
             $priceValue = 0.0;
             $selectedSubUnit = $rentalDetails['selectedSubUnit'] ?? null;
-
             if (is_string($selectedSubUnit)) {
                 $selectedSubUnit = json_decode($selectedSubUnit, true);
             }
-
             if (isset($selectedSubUnit['price'])) {
                 $price = $selectedSubUnit['price'];
 
@@ -554,7 +357,6 @@ class RentalService
                     $priceName  = 'default';
                 }
             }
-            
             $subUnitData = [
                 'type' => $selectedSubUnit['type'],
                 'roomType' => $selectedSubUnit['roomType'] ?? null,
@@ -565,11 +367,9 @@ class RentalService
                 ],
                 'isAvailable' => $selectedSubUnit['isAvailable'] ?? true
             ];
-
             $totalRentalPrice = $subUnitData['price']['price'] 
                 + ($parking['hasParking'] ? $parking['fee'] : 0.0) 
                 + ($shuttle['hasShuttle'] ? $shuttle['fee'] : 0.0);
-
             $signatureData = null;
             if (!empty($signatureImage)) {
                 $signatureFiles = is_array($signatureImage) ? $signatureImage : [$signatureImage];
@@ -586,9 +386,6 @@ class RentalService
                 $signatureData = $signatureUploads[0];
             }
 
-            // -------------------------------
-            // Handle guardian signature upload (optional)
-            // -------------------------------
             $guardianSignatureData = null;
             if (!empty($guardianSignatureImage)) {
                 $guardianFiles = is_array($guardianSignatureImage) ? $guardianSignatureImage : [$guardianSignatureImage];
@@ -605,18 +402,14 @@ class RentalService
                 $guardianSignatureData = $guardianUploads[0];
             }
 
-            // -------------------------------
             // Create Rental
-            // -------------------------------
             $unitTypeForRental = $subUnitData['roomType'] ?? $subUnitData['bedType'] ?? $unit['unitType'];
             
             $unitYear = isset($unit['unitYear']) ? (int) $unit['unitYear'] : null;
             if ($unitYear === null && isset($rentalDetails['unitYear'])) {
                 $unitYear = (int) $rentalDetails['unitYear'];
             }
-            
             error_log('unitYear resolved to: ' . var_export($unitYear, true));
-            
             $rental = new Rental(
                 rentalStartDate: $rentalDetails['rentalStartDate'] ?? null,
                 rentalEndDate: $rentalDetails['rentalEndDate'] ?? null,
@@ -632,18 +425,13 @@ class RentalService
                 selectedSubUnits: $subUnitData,
                 unitYear: $unitYear,
             );
-
             $result = $this->rentalCollection->insertOne($rental->toArray());
             $newRental = $this->rentalCollection->findOne(['_id' => $result->getInsertedId()]);
 
-            // -------------------------------
-            // Update unit and user
-            // -------------------------------
             $this->userCollection->updateOne(
                 ['_id' => $user['_id']],
                 ['$push' => ['rentals' => $newRental['_id']]]
             );
-
             if (isset($unit['reservedBy'])) {
                 $this->unitCollection->updateOne(
                     ['_id' => $unit['_id']],
@@ -654,7 +442,6 @@ class RentalService
                 'rental' => $newRental,
                 'accessKey' => $accessKey
             ];
-
         } catch (Exception $e) {
             error_log('RentalService error: ' . $e->getMessage());
             throw $e;
@@ -668,16 +455,13 @@ class RentalService
             if (!$rental) {
                 throw new Exception('Rental not found');
             }
-
             if (isset($rental['signature']['fileId'])) {
                 try {
                     $this->localFileHelper->deleteImage($rental['signature']['fileId']);
-                    // Or use $this->ImageKitService->deleteImage(...) if switching back
                 } catch (Exception $e) {
                     error_log("Failed to delete signature image {$rental['signature']['fileId']}: " . $e->getMessage());
                 }
             }
-
             // Re-mark sub-unit as available
             $subUnit = $rental['selectedSubUnits'] ?? null;
             if ($subUnit) {
@@ -692,13 +476,11 @@ class RentalService
                     ['$set' => ['subUnits.$.isAvailable' => true]]
                 );
             }
-
             $this->userCollection->updateOne(
                 ['_id' => new ObjectId($rental['user'])],
                 ['$pull' => ['rentals' => new ObjectId($rentalId)]]
             );
             $unit = $this->unitCollection->findOne(['_id' => new ObjectId($rental['unit'])]);
-
             // ONLY DECREMENT WHEN A RENTAL IS ACTIVE (NEW SYSTEM)
             if ($rental['status'] === 'Active') {
                 if ($unit) {
@@ -711,9 +493,7 @@ class RentalService
                     );
                 }
             }
-
             $this->clearAllRentalDocsService($rentalId);
-
             $this->rentalCollection->deleteOne(['_id' => new ObjectId($rentalId)]);
             return true;
         } catch (Exception $e) {
@@ -729,7 +509,6 @@ class RentalService
             if (!$rental) {
                 throw new Exception('Rental not found');
             }
-
             return $rental;
         } catch (Exception $e) {
             error_log('FindRentalByIdService error: ' . $e->getMessage());
@@ -742,7 +521,6 @@ class RentalService
         try {
             $rentals = $this->rentalCollection->find();
             $results = [];
-
             foreach ($rentals as $doc) {
                 $rental = [
                     '_id' => (string) $doc['_id'],
@@ -754,7 +532,6 @@ class RentalService
                     'rentalPrice' => $doc['rentalPrice'] ?? null,
                     'trafalgarId' => $doc['trafalgarId'] ?? null,
                     'unitYear' => $doc['unitYear'] ?? null,
-                    // payerData
                     'unit' => (string) $doc['unit'] ?? null,
                     'unitType' => $doc['unitType'] ?? null,
                     'user' => (string) $doc['user'] ?? null,
@@ -768,7 +545,6 @@ class RentalService
                         'fee' => $doc['shuttle']['fee'] ?? 0.0,
                     ],
                 ];
-
                 $rental['payerData'] = [
                     'firstName' => $doc['payerData']['firstName'] ?? null,
                     'lastName' => $doc['payerData']['lastName'] ?? null,
@@ -779,7 +555,6 @@ class RentalService
                     'score' => $doc['payerData']['score'] ?? 0,
                     'isValidated' => $doc['payerData']['isValidated'] ?? false,
                 ];
-
                 $rental['documents'] = isset($doc['documents']) ? array_map(function ($document) {
                     return [
                         'documentUrl' => $document['documentUrl'] ?? null,
@@ -789,16 +564,7 @@ class RentalService
                         '_id' => isset($document['_id']) ? (string) $document['_id'] : null
                     ];
                 }, $doc['documents']->getArrayCopy()) : [];
-                
                 $rental['signingTokens'] = $doc['signingTokens'] ?? null;
-
-                // $rental['selectedSubUnits'] = [
-                //     'type' => $doc['selectedSubUnits']['type'] ?? null,
-                //     'roomType' => $doc['selectedSubUnits']['roomType'] ?? null,
-                //     'bedType' => $doc['selectedSubUnits']['bedType'] ?? null,
-                //     'price' => $doc['selectedSubUnits']['price'] ?? 0.0,
-                //     'isAvailable' => $doc['selectedSubUnits']['isAvailable'] ?? true,
-                // ];
                 $rental['selectedSubUnits'] = [
                     'type' => $doc['selectedSubUnits']['type'] ?? null,
                     'roomType' => $doc['selectedSubUnits']['roomType'] ?? null,
@@ -813,7 +579,6 @@ class RentalService
                 ];
                 $results[] = $rental;
             }
-
             return $results;
         } catch (Exception $e) {
             error_log('FindAllRentalsService error: ' . $e->getMessage());
@@ -830,10 +595,9 @@ class RentalService
             }
             $rentalIds = $user['rentals'] ?? [];
             if (empty($rentalIds)) {
-                return []; // Return empty array if no rentals exist
+                return [];
             }
             $myRentals = $this->rentalCollection->find(['_id' => ['$in' => $user['rentals']]]);
-
             $results = [];
             foreach ($myRentals as $doc) {
                 $rental = [
@@ -846,7 +610,6 @@ class RentalService
                     'rentalPrice' => $doc['rentalPrice'] ?? null,
                     'trafalgarId' => $doc['trafalgarId'] ?? null,
                     'unitYear' => $doc['unitYear'] ?? null,
-                    // payerData
                     'unit' => (string) $doc['unit'] ?? null,
                     'unitType' => $doc['unitType'] ?? null,
                     'user' => (string) $doc['user'] ?? null,
@@ -860,7 +623,6 @@ class RentalService
                         'fee' => $doc['shuttle']['fee'] ?? 0.0,
                     ],
                 ];
-
                 $rental['payerData'] = [
                     'firstName' => $doc['payerData']['firstName'] ?? null,
                     'lastName' => $doc['payerData']['lastName'] ?? null,
@@ -871,7 +633,6 @@ class RentalService
                     'score' => $doc['payerData']['score'] ?? 0,
                     'isValidated' => $doc['payerData']['isValidated'] ?? false,
                 ];
-
                 $rental['documents'] = isset($doc['documents']) ? array_map(function ($document) {
                     return [
                         'documentUrl' => $document['documentUrl'] ?? null,
@@ -881,16 +642,7 @@ class RentalService
                         '_id' => isset($document['_id']) ? (string) $document['_id'] : null
                     ];
                 }, $doc['documents']->getArrayCopy()) : [];
-                
                 $rental['signingTokens'] = $doc['signingTokens'] ?? null;
-
-                // $rental['selectedSubUnits'] = [
-                //     'type' => $doc['selectedSubUnits']['type'] ?? null,
-                //     'roomType' => $doc['selectedSubUnits']['roomType'] ?? null,
-                //     'bedType' => $doc['selectedSubUnits']['bedType'] ?? null,
-                //     'price' => $doc['selectedSubUnits']['price'] ?? 0.0,
-                //     'isAvailable' => $doc['selectedSubUnits']['isAvailable'] ?? true,
-                // ];
                 $rental['selectedSubUnits'] = [
                     'type' => $doc['selectedSubUnits']['type'] ?? null,
                     'roomType' => $doc['selectedSubUnits']['roomType'] ?? null,
@@ -903,7 +655,6 @@ class RentalService
                         : (float) ($doc['selectedSubUnits']['price'] ?? 0.0),
                     'isAvailable' => $doc['selectedSubUnits']['isAvailable'] ?? true,
                 ];
-
                 $results[] = $rental;
             }
             return $results;
@@ -943,15 +694,10 @@ class RentalService
             if (!$unitToUpdate) {
                 throw new Exception('Unit not found');
             }
-            // if ($unitToUpdate['currentOccupants'] >= $unitToUpdate['unitOccupants']) {
-            //     throw new Exception('Unit is already at full capacity');
-            // }
-
             if ($rentalDetails['status'] === 'Active' 
                 && $unitToUpdate['currentOccupants'] >= $unitToUpdate['unitOccupants']) {
                 throw new Exception('Unit is already at full capacity');
             }
-
             // Approval logic
             if ($rentalDetails['status'] === 'Active') {
                 $this->unitCollection->updateOne(
@@ -961,7 +707,6 @@ class RentalService
                         '$inc' => ['currentOccupants' => 1]
                     ]
                 );
-
                 // Mark sub-unit unavailable
                 $subUnit = $rentalToUpdate['selectedSubUnits'] ?? null;
                 if ($subUnit) {
@@ -971,13 +716,11 @@ class RentalService
                     } elseif (isset($subUnit['bedType'])) {
                         $filter['subUnits.bedType'] = $subUnit['bedType'];
                     }
-
                     $this->unitCollection->updateOne(
                         $filter,
                         ['$set' => ['subUnits.$.isAvailable' => false]]
                     );
                 }
-
                 // Gender assignment
                 if (!($unitToUpdate['accessKey']['isShared'] ?? false)) {
                     $userDoc = $this->userCollection->findOne(['_id' => $rentalToUpdate['user']]);
@@ -993,7 +736,6 @@ class RentalService
                     }
                 }
             }
-
             // Rejection logic
             if ($rentalDetails['status'] === 'Rejected') {
                 $subUnit = $rentalToUpdate['selectedSubUnits'] ?? null;
@@ -1011,7 +753,6 @@ class RentalService
                     );
                 }
             }
-
             // Revert Active → Pending
             if ($rentalDetails['status'] === 'Pending' && $rentalToUpdate['status'] === 'Active') {
                 // Decrement occupants
@@ -1019,17 +760,14 @@ class RentalService
                     ['_id' => $unitToUpdate['_id']],
                     ['$inc' => ['currentOccupants' => -1]]
                 );
-
                 $this->unitCollection->updateOne(
                     ['_id' => $unitToUpdate['_id']],
                     ['$pull' => ['rentedHistory' => $rentalToUpdate['_id']]]
                 );
-
                 $this->unitCollection->updateOne(
                     ['_id' => $unitToUpdate['_id']],
                     ['$pull' => ['rentedHistory' => (string)$rentalToUpdate['_id']]]
                 );
-
                 // Restore sub-unit availability
                 $subUnit = $rentalToUpdate['selectedSubUnits'] ?? null;
                 if ($subUnit) {
@@ -1044,192 +782,13 @@ class RentalService
                         $filter,
                         ['$set' => ['subUnits.$.isAvailable' => true]]
                     );
-
-
                 }
-
-                // Optional: clear gender assignment if unit is now empty
-                // $this->unitChecks($unitToUpdate);
             }
-
-
-            // Finally update rental
             $this->rentalCollection->updateOne(
                 ['_id' => new ObjectId($rentalId)],
                 ['$set' => $rentalDetails]
             );
-
             return $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
-        } catch (Exception $e) {
-            error_log('Service error: ' . $e->getMessage());
-            throw $e;
-        }
-    }
-
-    // public function reassignUnitService($reassignDetails) {
-    //     try {
-    //         $rentalToUpdate = $this->rentalCollection->findOne([
-    //             '_id' => new ObjectId($reassignDetails['rentalId'])
-    //         ]);
-    //         if (!$rentalToUpdate) {
-    //             throw new Exception('Rental not found');
-    //         }
-
-    //         $unitDoc = $this->unitCollection->findOne([
-    //             '_id' => new ObjectId($reassignDetails['newUnitId'])
-    //         ]);
-    //         if (!$unitDoc) {
-    //             throw new Exception('Target unit not found');
-    //         }
-
-    //         $newSubUnit = $reassignDetails['newSubUnit'] ?? null;
-    //         if (!$newSubUnit) {
-    //             throw new Exception('New subunit details missing');
-    //         }
-
-    //         $unitTypeForRental = $newSubUnit['roomType'] 
-    //             ?? $newSubUnit['bedType'] 
-    //             ?? $unitDoc['unitType'];
-
-    //         $updateData = [
-    //             'unit' => $unitDoc['_id'],
-    //             'unitType' => $unitTypeForRental,
-    //             'selectedSubUnits' => [
-    //                 'type' => $newSubUnit['type'] ?? null,
-    //                 'roomType' => $newSubUnit['roomType'] ?? null,
-    //                 'bedType' => $newSubUnit['bedType'] ?? null,
-    //                 'price' => $newSubUnit['price'] ?? null,
-    //                 'isAvailable' => $newSubUnit['isAvailable'] ?? true
-    //             ]
-    //         ];
-
-    //         $this->rentalCollection->updateOne(
-    //             ['_id' => $rentalToUpdate['_id']],
-    //             ['$set' => $updateData]
-    //         );
-
-    //         error_log("Rental {$rentalToUpdate['_id']} reassigned to unit {$unitDoc['unitNumber']}");
-
-    //         $updatedRental = $this->rentalCollection->findOne(['_id' => new ObjectId($rentalToUpdate['_id'])]);
-    //         return $updatedRental;
-    //         // return true;
-    //     } catch (Exception $e) {
-    //         error_log('Service error: ' . $e->getMessage());
-    //         throw $e;
-    //     }
-    // }
-
-    
-    public function reassignUnitService($reassignDetails) {
-        try {
-            $rentalToUpdate = $this->rentalCollection->findOne([
-                '_id' => new ObjectId($reassignDetails['rentalId'])
-            ]);
-            if (!$rentalToUpdate) {
-                throw new Exception('Rental not found');
-            }
-
-            $unitDoc = $this->unitCollection->findOne([
-                '_id' => new ObjectId($reassignDetails['newUnitId'])
-            ]);
-            if (!$unitDoc) {
-                throw new Exception('Target unit not found');
-            }
-
-            $newSubUnit = $reassignDetails['newSubUnit'] ?? null;
-            if (!$newSubUnit) {
-                throw new Exception('New subunit details missing');
-            }
-
-            // Update rental with full subUnit details (including price plan)
-            $unitTypeForRental = $newSubUnit['roomType'] 
-                ?? $newSubUnit['bedType'] 
-                ?? $unitDoc['unitType'];
-
-            $updateData = [
-                'unit' => $unitDoc['_id'],
-                'unitType' => $unitTypeForRental,
-                'selectedSubUnits' => [
-                    'type' => $newSubUnit['type'] ?? null,
-                    'roomType' => $newSubUnit['roomType'] ?? null,
-                    'bedType' => $newSubUnit['bedType'] ?? null,
-                    'price' => $newSubUnit['price'] ?? null,
-                    'isAvailable' => false // rental always marks it occupied
-                ]
-            ];
-            
-            // Calculate total rental price (subUnit price + parking fee based on plan)
-            $basePrice = $newSubUnit['price']['price'] ?? 0.0;
-            $parkingFee = 0.0;
-
-            if (!empty($rentalToUpdate['parking']) && !empty($rentalToUpdate['parking']['hasParking'])) {
-                $planName = $newSubUnit['price']['name'] ?? null;
-
-                if ($planName === '10-month') {
-                    $parkingFee = 495.0;
-                } elseif ($planName === '11-month') {
-                    $parkingFee = 450.0;
-                } elseif ($planName === 'annual') {
-                    $parkingFee = 4950.0;
-                } else {
-                    // fallback to whatever was stored before
-                    $parkingFee = $rentalToUpdate['parking']['fee'] ?? 0.0;
-                }
-
-                // Update the rental's parking fee field as well
-                $updateData['parking'] = $rentalToUpdate['parking'];
-                $updateData['parking']['fee'] = $parkingFee;
-            }
-
-            $updateData['rentalPrice'] = $basePrice + $parkingFee;
-
-            $this->rentalCollection->updateOne(
-                ['_id' => $rentalToUpdate['_id']],
-                ['$set' => $updateData]
-            );
-
-            // Only update unit availability if rental is Active
-            if ($rentalToUpdate['status'] === 'Active') {
-                // Free up old unit subUnit
-                $oldUnitId = $rentalToUpdate['unit'];
-                $oldSubUnit = $rentalToUpdate['selectedSubUnits'] ?? null;
-                if ($oldSubUnit) {
-                    $criteria = ['_id' => new ObjectId($oldUnitId)];
-                    if (!empty($oldSubUnit['bedType'])) {
-                        $criteria['subUnits.bedType'] = $oldSubUnit['bedType'];
-                    } elseif (!empty($oldSubUnit['roomType'])) {
-                        $criteria['subUnits.roomType'] = $oldSubUnit['roomType'];
-                    }
-
-                    $this->unitCollection->updateOne(
-                        $criteria,
-                        [
-                            '$set' => ['subUnits.$.isAvailable' => true],
-                            '$inc' => ['currentOccupants' => -1]
-                        ]
-                    );
-                }
-
-                // Occupy new unit subUnit
-                $criteria = ['_id' => new ObjectId($unitDoc['_id'])];
-                if (!empty($newSubUnit['bedType'])) {
-                    $criteria['subUnits.bedType'] = $newSubUnit['bedType'];
-                } elseif (!empty($newSubUnit['roomType'])) {
-                    $criteria['subUnits.roomType'] = $newSubUnit['roomType'];
-                }
-
-                $this->unitCollection->updateOne(
-                    $criteria,
-                    [
-                        '$set' => ['subUnits.$.isAvailable' => false],
-                        '$inc' => ['currentOccupants' => 1]
-                    ]
-                );
-            }
-
-            error_log("Rental {$rentalToUpdate['_id']} reassigned to unit {$unitDoc['unitNumber']} (status: {$rentalToUpdate['status']})");
-
-            return $this->rentalCollection->findOne(['_id' => new ObjectId($rentalToUpdate['_id'])]);
         } catch (Exception $e) {
             error_log('Service error: ' . $e->getMessage());
             throw $e;
@@ -1243,24 +802,20 @@ class RentalService
             if (!$rental) {
                 throw new Exception('Rental not found');
             }
-
             // Update rental status to 'Ended'
             $this->rentalCollection->updateOne(
                 ['_id' => new ObjectId($rentalId)],
                 ['$set' => ['status' => 'Ended']]
             );
-
             $unit = $this->unitCollection->findOne(['_id' => new ObjectId($rental['unit'])]);
             if (!$unit) {
                 throw new Exception('Unit not found');
             }
-
             // Decrement current occupants
             $this->unitCollection->updateOne(
                 ['_id' => new ObjectId($rental['unit'])],
                 ['$inc' => ['currentOccupants' => -1]]
             );
-
             $subUnit = $rental['selectedSubUnits'] ?? null;
             if ($subUnit) {
                 $filter = ['_id' => new ObjectId($rental['unit'])];
@@ -1275,12 +830,9 @@ class RentalService
                     ['$set' => ['subUnits.$.isAvailable' => true]]
                 );
             }
-
-
             // Return the updated rental
             $updatedRental = $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
             return $updatedRental;
-
         } catch (Exception $e) {
             error_log('Service error: ' . $e->getMessage());
             throw $e;
@@ -1294,36 +846,25 @@ class RentalService
             if (!$rental) {
                 throw new Exception('Rental not found');
             }
-
-            // Score the payer data
             $score = $this->ScoreApi->scorePayerData($rentalData['payerData'] ?? []) ?? 0; // Default to 0
             $isEligible = $score >= 60;
 
-            // Ensure payerData exists
             $payerData = $rental['payerData'] ?? [];
-
-            // Store validation result
             $payerData['isValidated'] = $isEligible;
             $payerData['score'] = $score;
 
-            // Assign other payer data
             $payerData['firstName'] = $rentalData['payerData']['firstName'] ?? '';
             $payerData['lastName'] = $rentalData['payerData']['lastName'] ?? '';
             $payerData['email'] = $rentalData['payerData']['email'] ?? '';
             $payerData['idNumber'] = (string) ($rentalData['payerData']['idNumber'] ?? '');
             $payerData['salary'] = (float) $rentalData['payerData']['salary'] ?? 0;
-
-            // Ensure bankName is a string
             $payerData['bankName'] = is_array($rentalData['payerData']['bankName'] ?? null) ?
                 ($rentalData['payerData']['bankName']['value'] ?? '') :
                 ($rentalData['payerData']['bankName'] ?? '');
-
-            // Update the rental
             $this->rentalCollection->updateOne(
                 ['_id' => new ObjectId($rentalId)],
                 ['$set' => ['payerData' => $payerData]]
             );
-
             return ['isValidated' => $isEligible, 'score' => $score];
         } catch (Exception $e) {
             error_log("Error in verifyAndSavePayerService: " . $e->getMessage());
@@ -1342,7 +883,6 @@ class RentalService
             if (!$unit) {
                 throw new Exception('Unit not found');
             }
-
             if ($rental['status'] !== 'Active') {
                 throw new Exception('Cannot end a rental if it was not approved');
             }
@@ -1353,17 +893,14 @@ class RentalService
                 [
                     '$set' => [
                         'status' => 'Ended',
-                        'earlyEndDate' => new UTCDateTime() // Current timestamp
+                        'earlyEndDate' => new UTCDateTime()
                     ]
                 ]
             );
-
-            // Decrement unit occupants
             $this->unitCollection->updateOne(
                 ['_id' => new ObjectId($rental['unit'])],
                 ['$inc' => ['currentOccupants' => -1]]
             );
-
             $subUnit = $rental['selectedSubUnits'] ?? null;
             if ($subUnit) {
                 $filter = ['_id' => new ObjectId($rental['unit'])];
@@ -1372,24 +909,20 @@ class RentalService
                 } elseif (isset($subUnit['bedType'])) {
                     $filter['subUnits.bedType'] = $subUnit['bedType'];
                 }
-
                 $this->unitCollection->updateOne(
                     $filter,
                     ['$set' => ['subUnits.$.isAvailable' => true]]
                 );
             }
-
-
             return $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
-
         } catch (Exception $e) {
             error_log('Service error: ' . $e->getMessage());
             throw $e;
         }
     }
 
-    // IMAGEKIT IMPLEMENTATION
-
+    // ─── UPLOAD DOCUMENT FUNCTIONS ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+    
     public function uploadRentalDocsService(string $userId, array $rentalDocs) {
         try {
             $pendingRental = $this->rentalCollection->findOne([
@@ -1433,16 +966,13 @@ class RentalService
                     throw new Exception('Failed to update rental documents');
                 }
             }
-
             $deleteResult = $this->applicationDraftCollection->deleteOne([
                 'userId' => new MongoDB\BSON\ObjectId($userId),
                 'status' => 'draft'
             ]);
-
             if ($deleteResult->getDeletedCount() > 0) {
                 error_log("Draft deleted for user: {$userId} after document upload");
             }
-
             return $this->userCollection->findOne(['_id' => new MongoDB\BSON\ObjectId($userId)]);
         }
         catch (Exception $e) {
@@ -1456,27 +986,22 @@ class RentalService
             if (!$rental) {
                 throw new Exception('Rental not found');
             }
-
             foreach ($rental['documents'] as $doc) {
                 $this->localFileHelper->deleteDocument($doc['fileId']);
             }
-
             $updateResult = $this->rentalCollection->updateOne(
                 ['_id' => new MongoDB\BSON\ObjectId($rentalId)],
                 ['$set' => ['documents' => []]]
             );
-            
             $userId = (string) $rental['user'];
             $deleteResult = $this->applicationDraftCollection->deleteOne([
                 'userId' => new ObjectId($userId),
                 'rentalId' => new ObjectId($rentalId),
                 'status' => 'draft'
             ]);
-
             if ($deleteResult->getDeletedCount() > 0) {
                 error_log("Draft deleted for user: {$userId} and rental: {$rentalId} after clearing documents");
             }
-            
             return $this->rentalCollection->findOne(['_id' => new MongoDB\BSON\ObjectId($rentalId)]);
         } catch (Exception $e) {
             throw $e;

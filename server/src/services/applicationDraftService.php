@@ -37,6 +37,8 @@ class ApplicationDraftService
         return null;
     }
 
+    // ─── HANDLERS ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
     public function saveApplicationDraftService(array $data)
     {
         try {
@@ -44,18 +46,14 @@ class ApplicationDraftService
             if (!$userId) {
                 throw new Exception('User ID is required');
             }
-    
             $user = $this->userCollection->findOne(['_id' => new ObjectId($userId)]);
             if (!$user) {
                 throw new Exception('User not found');
             }
-    
             $existingDraft = $this->applicationDraftCollection->findOne([
                 'userId' => new ObjectId($userId),
                 'status' => 'draft'
             ]);
-    
-            // Build draft array directly (no model class)
             $draftArray = [
                 'userId' => new ObjectId($userId),
                 'rentalId' => isset($data['rentalId']) ? new ObjectId($data['rentalId']) : null,
@@ -71,20 +69,16 @@ class ApplicationDraftService
                 'signatures' => $data['signatures'] ?? [],
                 'file' => $data['file'] ?? null
             ];
-    
             if ($existingDraft) {
                 $draftArray['updatedAt'] = new UTCDateTime();
                 unset($draftArray['createdAt']);
-    
                 $updateResult = $this->applicationDraftCollection->updateOne(
                     ['_id' => $existingDraft['_id']],
                     ['$set' => $draftArray]
                 );
-    
                 if ($updateResult->getModifiedCount() === 0) {
                     throw new Exception('Failed to update draft');
                 }
-    
                 $draftId = (string) $existingDraft['_id'];
                 $message = 'Draft updated successfully';
             } else {
@@ -93,18 +87,15 @@ class ApplicationDraftService
                 if ($insertResult->getInsertedCount() === 0) {
                     throw new Exception('Failed to save draft');
                 }
-    
                 $draftId = (string) $insertResult->getInsertedId();
                 $message = 'Draft saved successfully';
             }
-    
             return [
                 'success' => true,
                 'draftId' => $draftId,
                 'message' => $message,
                 'updatedAt' => $this->safeDateFormat(new UTCDateTime())
             ];
-    
         } catch (Exception $e) {
             error_log('Save application draft error: ' . $e->getMessage());
             throw new Exception('Failed to save draft: ' . $e->getMessage());
@@ -117,16 +108,13 @@ class ApplicationDraftService
             if (!preg_match('/^[a-f\d]{24}$/i', $userId)) {
                 throw new Exception('Invalid user ID format');
             }
-
             $draft = $this->applicationDraftCollection->findOne([
                 'userId' => new ObjectId($userId),
                 'status' => 'draft'
             ]);
-
             if (!$draft) {
                 return null;
             }
-
             return [
                 '_id' => (string) $draft['_id'],
                 'userId' => (string) $draft['userId'],
@@ -142,7 +130,6 @@ class ApplicationDraftService
                 'createdAt' => $this->safeDateFormat($draft['createdAt'] ?? null),
                 'updatedAt' => $this->safeDateFormat($draft['updatedAt'] ?? null)
             ];
-
         } catch (Exception $e) {
             error_log('Get draft error: ' . $e->getMessage());
             throw new Exception('Failed to get draft: ' . $e->getMessage());
@@ -179,9 +166,7 @@ class ApplicationDraftService
                     'updatedAt' => $this->safeDateFormat($draft['updatedAt'] ?? null)
                 ];
             }
-
             return $results;
-
         } catch (Exception $e) {
             error_log('Get all drafts error: ' . $e->getMessage());
             throw $e;
@@ -194,12 +179,10 @@ class ApplicationDraftService
             if (!preg_match('/^[a-f\d]{24}$/i', $userId)) {
                 throw new Exception('Invalid user ID format');
             }
-
             $deleteResult = $this->applicationDraftCollection->deleteOne([
                 'userId' => new ObjectId($userId),
                 'status' => 'draft'
             ]);
-
             return [
                 'success' => true,
                 'deletedCount' => $deleteResult->getDeletedCount(),
@@ -207,7 +190,6 @@ class ApplicationDraftService
                     ? 'Draft deleted successfully'
                     : 'No draft found to delete'
             ];
-
         } catch (Exception $e) {
             error_log('Delete draft error: ' . $e->getMessage());
             throw new Exception('Failed to delete draft: ' . $e->getMessage());

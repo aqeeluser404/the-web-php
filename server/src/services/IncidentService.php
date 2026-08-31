@@ -32,6 +32,8 @@ class IncidentService {
         return (string) mt_rand(100000, 999999);
     }
 
+    // ─── HANDLERS ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
     public function createIncidentService(array $incidentDetails): array {
         try {
             if (empty($incidentDetails['incidentNature']) || empty($incidentDetails['description'])) {
@@ -45,7 +47,6 @@ class IncidentService {
                     error_log("Multiple collisions generating logNumber");
                 }
             } while ($existingIncident !== null);
-
             $incidentData = [
                 'logNumber' => $logNumber,
                 'firstName' => $incidentDetails['firstName'],
@@ -57,7 +58,6 @@ class IncidentService {
                 'location' => $incidentDetails['location'],
                 'description' => $incidentDetails['description'],
             ];
-
             $insertResult = $this->incidentCollection->insertOne($incidentData);
             return $incidentData;
         } catch (Exception $error) {

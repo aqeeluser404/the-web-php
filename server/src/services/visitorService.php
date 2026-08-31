@@ -34,12 +34,13 @@ class visitorService {
         return (string) mt_rand(100000, 999999);
     }
 
+    // ─── HANDLERS ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
     public function createVisitorService(array $visitorDetails): array {
         try {
             if (empty($visitorDetails['user']) || empty($visitorDetails['bookingTimeslot'])) {
                 throw new Exception('Missing required fields: user and bookingTimeslot are required');
             }
-            
             $attempts = 0;
             do {
                 $visitorNumber = $this->generateCustomId();
@@ -48,13 +49,10 @@ class visitorService {
                     error_log("Multiple collisions generating visitorNumber");
                 }
             } while ($existingVisitor !== null);
-
-            // Convert the ISO string to UTCDateTime
             $bookingTime = strtotime($visitorDetails['bookingTimeslot']);
             if ($bookingTime === false) {
                 throw new Exception('Invalid bookingTimeslot format');
             }
-
             $visitorData = [
                 'visitorNumber' => $visitorNumber,
                 'firstName' => $visitorDetails['firstName'],
@@ -65,14 +63,11 @@ class visitorService {
                 'status' => 'Pending',
                 'user' => new MongoDB\BSON\ObjectId($visitorDetails['user']),
             ];
-            
             $insertResult = $this->visitorCollection->insertOne($visitorData);
-            
             $this->userCollection->updateOne(
                 ['_id' => new MongoDB\BSON\ObjectId($visitorData['user'])],
                 ['$push' => ['visitors' => $insertResult->getInsertedId()]]
             );
-            
             return $visitorData;
         } catch (Exception $error) {
             error_log('Visitor creation failed: ' . $error->getMessage());
@@ -96,18 +91,15 @@ class visitorService {
     public function findAllMyVisitorsService($userId) {
         try {
             $user = $this->userCollection->findOne(['_id' => new ObjectId($userId)]);
-
             if (!$user) {
                 throw new Exception('User not found');
             }
             if (empty($user['visitors'])) {
                 return [];
             }
-
             $visitors = $this->visitorCollection->find([
                 '_id' => ['$in' => $user['visitors']]
             ]);
-
             $results = [];
             foreach ($visitors as $doc) {
                 $visitor = [
@@ -121,10 +113,8 @@ class visitorService {
                     'status' => $doc['status'],
                     'user' => (string)$doc['user'],
                 ];
-
                 $results[] = $visitor;
             }
-            
             return $results;
         } catch (Exception $error) {
             error_log('Error finding user visitors: ' . $error->getMessage());
@@ -152,7 +142,6 @@ class visitorService {
 
                 $results[] = $visitor;
             }
-            
             return $results;
         } catch (Exception $error) {
             error_log('Error finding visitors: ' . $error->getMessage());
@@ -183,14 +172,11 @@ class visitorService {
             if (!$visitor) {
                 throw new Exception('Visitor not found');
             }
-
             $this->userCollection->updateOne(
                 ['_id' => new ObjectId($visitor['user'])],
                 ['$pull' => ['visitors' => ['$in' => [new ObjectId($visitorId), null]]]]
             );
-
             $this->visitorCollection->deleteOne(['_id' => new ObjectId($visitorId)]);
-
             return true;
         } catch (Exception $error) {
             error_log('Error deleting visitor: ' . $error->getMessage());
