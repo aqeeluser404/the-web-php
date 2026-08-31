@@ -28,6 +28,8 @@ class ApplicationDraftController {
             ->withHeader('Content-Type', 'application/json');
     }
 
+    // ─── CONTROLLERS ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
     public function saveApplicationDraftController($req, $res) {
         try {
             $body = $req->getParsedBody();

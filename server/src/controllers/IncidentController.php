@@ -25,6 +25,8 @@ class IncidentController {
             ->withHeader('Content-Type', 'application/json');
     }
 
+    // ─── CONTROLLERS ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
     public function createIncidentController($req, $res) {
         try {
             $incidentDetails = $req->getParsedBody();
@@ -44,7 +46,6 @@ class IncidentController {
         try {
             $id = $req->getAttribute('id');
             $incident = $this->incidentService->findIncidentByIdService($id);
-
             return $this->respond($res,  $incident, 200);
         } catch (Exception $e) {
             return $this->respond($res, [
@@ -56,7 +57,6 @@ class IncidentController {
     public function findAllIncidentsController($req, $res) {
         try {
             $incidents = $this->incidentService->findAllIncidentsService();
-
             return $this->respond($res,  $incidents, 200);
         } catch (Exception $e) {
             return $this->respond($res, [
@@ -69,9 +69,7 @@ class IncidentController {
         try {
             $id = $req->getAttribute('id');
             $incidentDetails = $req->getParsedBody();
-
             $updatedIncident = $this->incidentService->updateIncidentService($id, $incidentDetails);
-            
             return $this->respond($res,  $updatedIncident, 200);
         } catch (Exception $e) {
             return $this->respond($res, [
