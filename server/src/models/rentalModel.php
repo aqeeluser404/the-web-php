@@ -76,6 +76,21 @@ class Rental {
      */
     public $unitYear = null;
 
+    /** 
+     * @var bool|null Whether this rental has been renewed/extended 
+     */
+    public $renewed = null;
+    
+    /** 
+     * @var ObjectId|null The original unit this rental was renewed from 
+     */
+    public $renewedFromUnit = null;
+    
+    /** 
+     * @var ObjectId|null The new unit this rental was renewed to 
+     */
+    public $renewedToUnit = null;
+
     public function __construct(
         float $rentalPrice,
         string $unit,
@@ -95,7 +110,10 @@ class Rental {
         ?array $documents = null,
         ?array $signingTokens = null,
         ?string $trafalgarId = null,
-        ?int $unitYear = null
+        ?int $unitYear = null,
+        ?bool $renewed = null,
+        ?string $renewedFromUnit = null,
+        ?string $renewedToUnit = null
     ) {
         $this->applicationDate = new UTCDateTime();
         $this->status = in_array($status, ['Pending', 'Rejected', 'Active', 'Ended']) ? $status : 'Pending';
@@ -190,6 +208,16 @@ class Rental {
     
         if ($this->unitYear !== null) {
             $array['unitYear'] = $this->unitYear;
+        }
+
+        if ($this->renewed !== null) {
+            $array['renewed'] = $this->renewed;
+        }
+        if ($this->renewedFromUnit !== null) {
+            $array['renewedFromUnit'] = $this->renewedFromUnit;
+        }
+        if ($this->renewedToUnit !== null) {
+            $array['renewedToUnit'] = $this->renewedToUnit;
         }
     
         return $array;
