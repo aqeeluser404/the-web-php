@@ -1,12 +1,8 @@
 <?php
 require_once __DIR__ . '/../../../vendor/autoload.php';
 
-use Dotenv\Dotenv;
 use Aws\Ses\SesClient;
 use Aws\Exception\AwsException;
-
-$dotenv = Dotenv::createImmutable(__DIR__ . '/../../../');
-$dotenv->load();
 
 class AmazonBypassTransporter {
     private $client;

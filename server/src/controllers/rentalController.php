@@ -2,7 +2,6 @@
 require_once __DIR__ . '/../services/rentalService.php';
 require_once __DIR__ . '/../../../vendor/autoload.php';
 
-use Dotenv\Dotenv;
 use Slim\Psr7\Request;
 use Slim\Psr7\Response;
 use MongoDB\BSON\ObjectId;
@@ -10,9 +9,6 @@ use MongoDB\BSON\UTCDateTime;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Slim\Psr7\UploadedFile;
-
-$dotenv = Dotenv::createImmutable(__DIR__ . '/../../../');
-$dotenv->load();
 
 class RentalController {
     private $rentalController;
@@ -39,6 +35,23 @@ class RentalController {
             return $this->respond($res, [
                 'error' => $e->getMessage()
             ], 404);
+        }
+    }
+
+    public function extendRentalToNewYearController($req, $res) {
+        try {
+            $body = $req->getParsedBody();
+            $rentalId = $req->getAttribute('id');
+            $newEndDate = $body['rentalEndDate'] ?? null;
+
+            if (!$newEndDate) {
+                throw new Exception('New end date is required');
+            }
+
+            $updatedRental = $this->rentalService->extendRentalToNewYear($rentalId, $newEndDate);
+            return $this->respond($res, $updatedRental, 200);
+        } catch (Exception $e) {
+            return $this->respond($res, ['error' => $e->getMessage()], 400);
         }
     }
 

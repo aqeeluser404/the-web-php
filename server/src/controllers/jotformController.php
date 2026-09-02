@@ -3,16 +3,12 @@ require_once __DIR__ . '/../../../vendor/autoload.php';
 require_once __DIR__ . '/../../database/db.php';
 require_once __DIR__ . '/../utils/LocalFileHelper.php';
 
-use Dotenv\Dotenv;
 use Slim\Psr7\Request;
 use Slim\Psr7\Response;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use Firebase\JWT\JWT;
 use Slim\Psr7\UploadedFile;
-
-$dotenv = Dotenv::createImmutable(__DIR__ . '/../../../');
-$dotenv->load();
 
 class JotformController
 {

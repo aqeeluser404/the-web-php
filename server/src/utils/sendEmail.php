@@ -4,11 +4,6 @@ require_once __DIR__ . '/createMailTransporter.php';
 require_once __DIR__ . '/createBypassTransporter.php';
 
 use PHPMailer\PHPMailer\Exception;
-use Dotenv\Dotenv;
-
-// Load environment variables
-$dotenv = Dotenv::createImmutable(__DIR__ . '/../../../');
-$dotenv->load();
 
 class EmailService {
     private $transporter;

@@ -5,11 +5,7 @@ require_once __DIR__ . '/../utils/LocalFileHelper.php';
 
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
-use Dotenv\Dotenv;
 use MongoDB\Operation\FindOneAndUpdate;
-
-$dotenv = Dotenv::createImmutable(__DIR__ . '/../../../');
-$dotenv->load();
 
 class CallLogService {
     private $callLogCollection;

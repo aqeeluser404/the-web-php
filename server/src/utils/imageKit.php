@@ -2,19 +2,12 @@
 require_once __DIR__ . '/../../../vendor/autoload.php';
 
 use ImageKit\ImageKit;
-use Dotenv\Dotenv;
 use Slim\Psr7\UploadedFile;
 
 class ImageKitService {
     private $imageKit;
 
     public function __construct() {
-        $envPath = __DIR__ . '/../../../';
-        if (file_exists($envPath . '.env')) {
-            $dotenv = Dotenv::createImmutable($envPath);
-            $dotenv->load();
-        }
-
         $this->validateEnv();
 
         $this->imageKit = new ImageKit(

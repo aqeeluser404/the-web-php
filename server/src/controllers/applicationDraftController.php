@@ -2,7 +2,6 @@
 require_once __DIR__ . '/../services/applicationDraftService.php';
 require_once __DIR__ . '/../../../vendor/autoload.php';
 
-use Dotenv\Dotenv;
 use Slim\Psr7\Request;
 use Slim\Psr7\Response;
 use MongoDB\BSON\ObjectId;
@@ -10,9 +9,6 @@ use MongoDB\BSON\UTCDateTime;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Slim\Psr7\UploadedFile;
-
-$dotenv = Dotenv::createImmutable(__DIR__ . '/../../../');
-$dotenv->load();
 
 class ApplicationDraftController {
     private $applicationDraftService;

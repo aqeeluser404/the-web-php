@@ -2,10 +2,6 @@
 require_once __DIR__ . '/../../vendor/autoload.php';
 
 use MongoDB\Client;
-use Dotenv\Dotenv;
-
-$dotenv = Dotenv::createImmutable(__DIR__ . '/../../');
-$dotenv->load();
 
 class Database {
     private static $client = null;

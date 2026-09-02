@@ -2,7 +2,6 @@
 require_once __DIR__ . '/../../../vendor/autoload.php';
 require_once __DIR__ . '/../utils/sendEmail.php';
 
-use Dotenv\Dotenv;
 use Slim\Psr7\Request;
 use Slim\Psr7\Response;
 use MongoDB\BSON\ObjectId;
@@ -11,9 +10,6 @@ use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
-
-$dotenv = Dotenv::createImmutable(__DIR__ . '/../../../');
-$dotenv->load();
 
 class SendEmailCOntroller {
     private $emailService;

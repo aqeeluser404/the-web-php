@@ -1,7 +1,6 @@
 <?php
 require_once __DIR__ . '/../../../vendor/autoload.php';
 
-use Dotenv\Dotenv;
 use Slim\Psr7\UploadedFile;
 
 class localFileHelper {
@@ -9,12 +8,6 @@ class localFileHelper {
     private $baseUrl;
 
     public function __construct() {
-        $envPath = __DIR__ . '/../../../';
-        if (file_exists($envPath . '.env')) {
-            $dotenv = Dotenv::createImmutable($envPath);
-            $dotenv->load();
-        }
-
         $this->uploadBasePath = $_SERVER['DOCUMENT_ROOT'] . '/backend/server/uploads';
         $this->baseUrl = $_ENV['FILE_STORAGE_URL'] ?? 'https://the-web.co.za/backend/server/uploads';
 

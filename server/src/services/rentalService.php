@@ -3,13 +3,10 @@ require_once __DIR__ . '/../../database/db.php';
 require_once __DIR__ . '/../../../vendor/autoload.php';
 require_once __DIR__ . '/../utils/scoreApi.php';
 require_once __DIR__ . '/../utils/LocalFileHelper.php';
+require_once __DIR__ . '/unitService.php';
 
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
-use Dotenv\Dotenv;
-
-$dotenv = Dotenv::createImmutable(__DIR__ . '/../../../');
-$dotenv->load();
 
 class RentalService
 {
@@ -19,6 +16,7 @@ class RentalService
     private $applicationDraftCollection;
     private $ScoreApi;
     private $localFileHelper;
+    private $unitService;
 
     public function __construct()
     {
@@ -29,6 +27,15 @@ class RentalService
         $this->applicationDraftCollection = $db->ApplicationDraft;
         $this->ScoreApi = new ScoreApi();
         $this->localFileHelper = new LocalFileHelper();
+        // $this->unitService = new UnitService();
+    }
+
+    private function getUnitService()
+    {
+        if ($this->unitService === null) {
+            $this->unitService = new UnitService();
+        }
+        return $this->unitService;
     }
 
     protected function safeDateFormat($dateValue)
@@ -229,6 +236,117 @@ class RentalService
             return $this->rentalCollection->findOne(['_id' => new ObjectId($rentalToUpdate['_id'])]);
         } catch (Exception $e) {
             error_log('Service error: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    public function extendRentalToNewYear($rentalId, $newEndDate)
+    {
+        try {
+            $rental = $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
+            if (!$rental) {
+                throw new Exception('Rental not found');
+            }
+
+            $oldUnit = $this->unitCollection->findOne(['_id' => $rental['unit']]);
+            if (!$oldUnit) {
+                throw new Exception('Current unit not found');
+            }
+
+            $newEndYear = (int) (new DateTime($newEndDate))->format('Y');
+
+            $newUnit = $this->unitCollection->findOne([
+                'unitNumber' => $oldUnit['unitNumber'],
+                'unitYear' => $newEndYear
+            ]);
+            if (!$newUnit) {
+                throw new Exception("No {$newEndYear} unit found matching unitNumber {$oldUnit['unitNumber']}");
+            }
+
+            $subUnitFilter = $rental['selectedSubUnits'] ?? null;
+            if (!$subUnitFilter) {
+                throw new Exception('Rental has no selected sub-unit to match');
+            }
+
+            // Find matching sub-unit in the new-year unit
+            $newSubUnits = $newUnit['subUnits'] instanceof \MongoDB\Model\BSONArray
+                ? $newUnit['subUnits']->getArrayCopy()
+                : (array) $newUnit['subUnits'];
+
+            $roomIndex = null;
+            foreach ($newSubUnits as $index => $subUnit) {
+                $subUnit = $subUnit instanceof \MongoDB\Model\BSONDocument ? $subUnit->getArrayCopy() : $subUnit;
+                if (
+                    (isset($subUnitFilter['roomType']) && ($subUnit['roomType'] ?? null) === $subUnitFilter['roomType']) ||
+                    (isset($subUnitFilter['bedType']) && ($subUnit['bedType'] ?? null) === $subUnitFilter['bedType'])
+                ) {
+                    $roomIndex = $index;
+                    break;
+                }
+            }
+
+            if ($roomIndex === null) {
+                throw new Exception("No matching sub-unit found in {$newEndYear} unit");
+            }
+
+            $targetSubUnit = $newSubUnits[$roomIndex];
+            $isAvailable = filter_var($targetSubUnit['isAvailable'] ?? true, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($isAvailable === false) {
+                throw new Exception("The {$newEndYear} version of this room is already occupied");
+            }
+
+            if (($newUnit['currentOccupants'] ?? 0) >= ($newUnit['unitOccupants'] ?? 0)) {
+                throw new Exception("The {$newEndYear} unit is already at full capacity");
+            }
+
+            // Gender check upfront, same rule as updateRentalService
+            if (!($newUnit['accessKey']['isShared'] ?? false)) {
+                $userDoc = $this->userCollection->findOne(['_id' => $rental['user']]);
+                $userGender = $userDoc['gender'] ?? null;
+                if (!empty($newUnit['genderAssignment']) && $newUnit['genderAssignment'] !== $userGender) {
+                    throw new Exception("This unit is only available for {$newUnit['genderAssignment']}s.");
+                }
+            }
+
+            // 1. Lock the sub-unit on the new-year unit
+            $filter = ['_id' => $newUnit['_id']];
+            if (isset($subUnitFilter['roomType'])) {
+                $filter['subUnits.roomType'] = $subUnitFilter['roomType'];
+            } elseif (isset($subUnitFilter['bedType'])) {
+                $filter['subUnits.bedType'] = $subUnitFilter['bedType'];
+            }
+            $this->unitCollection->updateOne(
+                $filter,
+                [
+                    '$set' => ['subUnits.$.isAvailable' => false],
+                    '$push' => ['rentedHistory' => $rental['_id']]
+                ]
+            );
+
+            // 2. Move the rental to point at the new-year unit
+            $update = [
+                'unit' => $newUnit['_id'],
+                'unitType' => $subUnitFilter['bedType'] ?? $subUnitFilter['roomType'] ?? $rental['unitType'],
+                'selectedSubUnits' => $targetSubUnit,
+                'rentalPrice' => $targetSubUnit['price'] ?? $rental['rentalPrice'],
+                'rentalEndDate' => new UTCDateTime(strtotime($newEndDate) * 1000),
+                'unitYear' => $newEndYear,
+                'renewed' => true,
+                'renewedFromUnit' => $oldUnit['_id'],
+                'renewedToUnit' => $newUnit['_id']
+            ];
+            $this->rentalCollection->updateOne(
+                ['_id' => new ObjectId($rentalId)],
+                ['$set' => $update]
+            );
+
+            // 3. Reconcile both units' counts/status/gender via your existing unitChecks
+            $this->getUnitService()->runUnitChecks($this->unitCollection->findOne(['_id' => $oldUnit['_id']]));
+            $this->getUnitService()->runUnitChecks($this->unitCollection->findOne(['_id' => $newUnit['_id']]));
+
+            return $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
+        } catch (Exception $e) {
+            error_log('Extend rental to new year error: ' . $e->getMessage());
             throw $e;
         }
     }
@@ -534,6 +652,9 @@ class RentalService
                     'unitYear' => $doc['unitYear'] ?? null,
                     'unit' => (string) $doc['unit'] ?? null,
                     'unitType' => $doc['unitType'] ?? null,
+                    'renewed' => $doc['renewed'] ?? null,
+                    'renewedFromUnit' => isset($doc['renewedFromUnit']) ? (string) $doc['renewedFromUnit'] : null,
+                    'renewedToUnit' => isset($doc['renewedToUnit']) ? (string) $doc['renewedToUnit'] : null,
                     'user' => (string) $doc['user'] ?? null,
                     'accessKey' => $doc['accessKey'] ?? null,
                     'parking' => [
@@ -610,6 +731,9 @@ class RentalService
                     'rentalPrice' => $doc['rentalPrice'] ?? null,
                     'trafalgarId' => $doc['trafalgarId'] ?? null,
                     'unitYear' => $doc['unitYear'] ?? null,
+                    'renewed' => $doc['renewed'] ?? null,
+                    'renewedFromUnit' => isset($doc['renewedFromUnit']) ? (string) $doc['renewedFromUnit'] : null,
+                    'renewedToUnit' => isset($doc['renewedToUnit']) ? (string) $doc['renewedToUnit'] : null,
                     'unit' => (string) $doc['unit'] ?? null,
                     'unitType' => $doc['unitType'] ?? null,
                     'user' => (string) $doc['user'] ?? null,
@@ -802,20 +926,19 @@ class RentalService
             if (!$rental) {
                 throw new Exception('Rental not found');
             }
-            // Update rental status to 'Ended'
+
+            // 1. Update rental status to 'Ended'
             $this->rentalCollection->updateOne(
                 ['_id' => new ObjectId($rentalId)],
                 ['$set' => ['status' => 'Ended']]
             );
+
             $unit = $this->unitCollection->findOne(['_id' => new ObjectId($rental['unit'])]);
             if (!$unit) {
                 throw new Exception('Unit not found');
             }
-            // Decrement current occupants
-            $this->unitCollection->updateOne(
-                ['_id' => new ObjectId($rental['unit'])],
-                ['$inc' => ['currentOccupants' => -1]]
-            );
+
+            // 2. Mark the sub-unit as available
             $subUnit = $rental['selectedSubUnits'] ?? null;
             if ($subUnit) {
                 $filter = ['_id' => new ObjectId($rental['unit'])];
@@ -824,15 +947,18 @@ class RentalService
                 } elseif (isset($subUnit['bedType'])) {
                     $filter['subUnits.bedType'] = $subUnit['bedType'];
                 }
-
                 $this->unitCollection->updateOne(
                     $filter,
                     ['$set' => ['subUnits.$.isAvailable' => true]]
                 );
             }
+
+            // 3. ✅ Let unitChecks handle the rest (occupants, status, gender)
+            $this->getUnitService()->runUnitChecks($this->unitCollection->findOne(['_id' => new ObjectId($rental['unit'])]));
+
             // Return the updated rental
-            $updatedRental = $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
-            return $updatedRental;
+            return $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
+            
         } catch (Exception $e) {
             error_log('Service error: ' . $e->getMessage());
             throw $e;
@@ -879,15 +1005,17 @@ class RentalService
             if (!$rental) {
                 throw new Exception('Rental not found');
             }
+            
             $unit = $this->unitCollection->findOne(['_id' => new ObjectId($rental['unit'])]);
             if (!$unit) {
                 throw new Exception('Unit not found');
             }
+            
             if ($rental['status'] !== 'Active') {
                 throw new Exception('Cannot end a rental if it was not approved');
             }
 
-            // Update rental status and set earlyEndDate
+            // 1. Update rental status and set earlyEndDate
             $this->rentalCollection->updateOne(
                 ['_id' => new ObjectId($rentalId)],
                 [
@@ -897,10 +1025,8 @@ class RentalService
                     ]
                 ]
             );
-            $this->unitCollection->updateOne(
-                ['_id' => new ObjectId($rental['unit'])],
-                ['$inc' => ['currentOccupants' => -1]]
-            );
+
+            // 2. Mark the sub-unit as available
             $subUnit = $rental['selectedSubUnits'] ?? null;
             if ($subUnit) {
                 $filter = ['_id' => new ObjectId($rental['unit'])];
@@ -914,7 +1040,12 @@ class RentalService
                     ['$set' => ['subUnits.$.isAvailable' => true]]
                 );
             }
+
+            // 3. ✅ Let unitChecks handle the rest (occupants, status, gender)
+            $this->getUnitService()->runUnitChecks($this->unitCollection->findOne(['_id' => new ObjectId($rental['unit'])]));
+
             return $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
+            
         } catch (Exception $e) {
             error_log('Service error: ' . $e->getMessage());
             throw $e;

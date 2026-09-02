@@ -8,10 +8,6 @@ use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
-use Dotenv\Dotenv;
-
-$dotenv = Dotenv::createImmutable(__DIR__ . '/../../../');
-$dotenv->load();
 
 class UserService
 {
@@ -484,6 +480,8 @@ class UserService
                     'userLastName' => $user['lastName'] ?? null,
                     'userEmail' => $user['email'] ?? null,
                     'userPhone' => $user['phone'] ?? null,
+                    'userGender' => $user['gender'] ?? null,
+                    'userAge' => $user['age'] ?? null,
                     'userVerification' => isset($user['verification']) ? [
                         'isVerified' => $user['verification']['isVerified'] ?? false,
                         'verificationToken' => $user['verification']['verificationToken'] ?? null,

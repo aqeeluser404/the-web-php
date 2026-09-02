@@ -11,12 +11,9 @@ use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 use Slim\Psr7\Response;
 use Slim\Psr7\Factory\StreamFactory;
-use Dotenv\Dotenv;
 
 class AuthenticationMiddleware implements MiddlewareInterface {
     public function __construct() {
-        $dotenv = Dotenv::createImmutable(__DIR__ . '/../../');
-        $dotenv->load();
     }
 
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface {

@@ -5,10 +5,6 @@ require_once __DIR__ . '/../utils/LocalFileHelper.php';
 
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
-use Dotenv\Dotenv;
-
-$dotenv = Dotenv::createImmutable(__DIR__ . '/../../../');
-$dotenv->load();
 
 class ApplicationDraftService
 {

@@ -1,23 +1,18 @@
 <?php
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-
+require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/src/controllers/callLogController.php';
 require_once __DIR__ . '/src/models/unitModel.php';
 require_once __DIR__ . '/src/models/rentalModel.php';
 require_once __DIR__ . '/src/services/rentalService.php';
 
+
 use Slim\Psr7\Response;
 use Slim\Factory\AppFactory;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
-use Dotenv\Dotenv;
 use App\Middleware\MongoResponseMiddleware;
 use App\Middleware\SanitizationMiddleware;
-
-$dotenv = Dotenv::createImmutable(__DIR__ . '/../');
-$dotenv->load();
 
 $app = AppFactory::create();
 

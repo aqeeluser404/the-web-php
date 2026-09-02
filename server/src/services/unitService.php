@@ -7,10 +7,6 @@ require_once __DIR__ . '/../../src/services/rentalService.php';
 
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
-use Dotenv\Dotenv;
-
-$dotenv = Dotenv::createImmutable(__DIR__ . '/../../../');
-$dotenv->load();
 
 class UnitService
 {
@@ -47,12 +43,72 @@ class UnitService
     {
         error_log("unitChecks called for unit: " . json_encode($unit));
         $updateData = [];
-    
+
+        // ============================================================
+        // 1. YEAR-BASED CLEANUP (auto-unlock expired units)
+        // ============================================================
+        $currentYear = (int) date('Y');
+        $unitYear = $unit['unitYear'] ?? $currentYear;
+        
+        if ($unitYear < $currentYear) {
+            // Check if there are any ACTIVE rentals for this unit
+            $activeRental = $this->rentalCollection->findOne([
+                'unit' => new ObjectId($unit['_id']),
+                'status' => 'Active'
+            ]);
+            
+            // If no active rentals, unlock everything
+            if (!$activeRental) {
+                // Unlock all sub-units
+                if (!empty($unit['subUnits'])) {
+                    $subUnitsArray = $unit['subUnits'] instanceof \MongoDB\Model\BSONArray
+                        ? $unit['subUnits']->getArrayCopy()
+                        : (array) $unit['subUnits'];
+                    
+                    foreach ($subUnitsArray as $key => $subUnit) {
+                        $this->unitCollection->updateOne(
+                            ['_id' => new ObjectId($unit['_id'])],
+                            [
+                                '$set' => [
+                                    "subUnits.{$key}.isAvailable" => true,
+                                    "subUnits.{$key}.reservedBy" => null,
+                                    "subUnits.{$key}.reservedAt" => null
+                                ],
+                                '$unset' => [
+                                    "subUnits.{$key}.extended" => '',
+                                    "subUnits.{$key}.extendedToYear" => ''
+                                ]
+                            ]
+                        );
+                    }
+                }
+                
+                // Reset unit
+                $updateData['unitStatus'] = 'Available';
+                $updateData['currentOccupants'] = 0;
+                $updateData['genderAssignment'] = null;
+                
+                error_log("Unit {$unit['unitNumber']} (year {$unitYear}) has been unlocked");
+                
+                if (!empty($updateData)) {
+                    $this->unitCollection->updateOne(
+                        ['_id' => new ObjectId($unit['_id'])],
+                        ['$set' => $updateData]
+                    );
+                }
+                return; // Exit early
+            }
+        }
+
+        // ============================================================
+        // 2. COUNT OCCUPIED SUB-UNITS
+        // ============================================================
         $occupiedCount = 0;
         if (!empty($unit['subUnits'])) {
             $subUnitsArray = $unit['subUnits'] instanceof \MongoDB\Model\BSONArray
                 ? $unit['subUnits']->getArrayCopy()
                 : (array) $unit['subUnits'];
+            
             foreach ($subUnitsArray as $subUnit) {
                 if ($subUnit instanceof \MongoDB\Model\BSONDocument) {
                     $subUnit = $subUnit->getArrayCopy();
@@ -67,65 +123,27 @@ class UnitService
             $occupiedCount = $unit['currentOccupants'] ?? 0;
             error_log("WARNING: Unit {$unit['unitNumber']} has no subUnits array, keeping currentOccupants = {$occupiedCount}");
         }
+        
         $updateData['currentOccupants'] = $occupiedCount;
 
-        // Status check: compare recalculated currentOccupants vs max unitOccupants
+        // ============================================================
+        // 3. SET UNIT STATUS
+        // ============================================================
         $capacity = $unit['unitOccupants'] ?? 0;
-        $updateData['unitStatus'] = ($occupiedCount >= $capacity)
-            ? 'Occupied'
-            : 'Available';
-        $now = new UTCDateTime();
-    
-        // If unit is empty → clear everything
+        $updateData['unitStatus'] = ($occupiedCount >= $capacity) ? 'Occupied' : 'Available';
+
+        // ============================================================
+        // 4. GENDER ASSIGNMENT
+        // ============================================================
+        // If unit is empty → clear gender
         if ($occupiedCount == 0) {
-            $updateData['accessKey.isShared'] = null;
-            $updateData['accessKey.assignedKey'] = null;
-            $updateData['accessKey.createdAt'] = null;
-            $updateData['accessKey.expiresAt'] = null;
             $updateData['genderAssignment'] = null;
         }
-        else if (
-            isset($unit['accessKey']['expiresAt']) && 
-            !empty($unit['accessKey']['expiresAt']) &&
-            $unit['accessKey']['expiresAt'] <= $now
-        ) {
-            $updateData['accessKey.isShared'] = null;
-            $updateData['accessKey.assignedKey'] = null;
-            $updateData['accessKey.createdAt'] = null;
-            $updateData['accessKey.expiresAt'] = null;
-            $rentalsWithKey = iterator_to_array($this->rentalCollection->find([
-                'unit' => new ObjectId($unit['_id']),
-                'accessKey' => ['$exists' => true, '$ne' => null]
-            ]));
-            $rentalCount = count($rentalsWithKey);
-            if ($rentalCount > 1) {
-                foreach ($rentalsWithKey as $rental) {
-                    try {
-                        $this->rentalService->deleteRentalService((string) $rental['_id']);
-                    } catch (Exception $e) {
-                        error_log("Failed to delete rental {$rental['_id']}: " . $e->getMessage());
-                    }
-                }
-                $updateData['genderAssignment'] = null;
-            } else if ($rentalCount === 1) {
-                $rental = $rentalsWithKey[0];
-                $this->rentalCollection->updateOne(
-                    ['_id' => $rental['_id']],
-                    ['$unset' => ['accessKey' => '']]
-                );
-                // Assign gender from user
-                if (isset($rental['user'])) {
-                    $user = $this->userCollection->findOne(['_id' => $rental['user']]);
-                    if ($user && isset($user['gender'])) {
-                        $updateData['genderAssignment'] = $user['gender'];
-                    }
-                }
-            }
-        }
-        if ($occupiedCount === 1 && empty($unit['genderAssignment'])) {
+        // If exactly 1 occupant → assign gender from that user
+        else if ($occupiedCount === 1 && empty($unit['genderAssignment'])) {
             $rental = $this->rentalCollection->findOne([
                 'unit' => new ObjectId($unit['_id']),
-                'status' => 'Active' 
+                'status' => 'Active'
             ]);
             if ($rental && isset($rental['user'])) {
                 $user = $this->userCollection->findOne(['_id' => $rental['user']]);
@@ -134,6 +152,10 @@ class UnitService
                 }
             }
         }
+
+        // ============================================================
+        // 5. ENSURE GENDER CONSISTENCY ACROSS SAME UNIT NUMBER
+        // ============================================================
         if (!empty($updateData['genderAssignment'])) {
             $existingUnit = $this->unitCollection->findOne([
                 'unitNumber' => $unit['unitNumber'],
@@ -144,16 +166,29 @@ class UnitService
                 throw new Exception("Gender restriction: This unit is only available for " . $existingUnit['genderAssignment'] . "s.");
             }
         }
+
+        // ============================================================
+        // 6. ENSURE UNIT YEAR IS SET
+        // ============================================================
         if (!isset($unit['unitYear']) || $unit['unitYear'] === null) {
             $updateData['unitYear'] = 2026;
             error_log("Added unitYear = 2026 to unit: {$unit['unitNumber']}");
         }
+
+        // ============================================================
+        // 7. APPLY UPDATES
+        // ============================================================
         if (!empty($updateData)) {
             $this->unitCollection->updateOne(
                 ['_id' => new ObjectId($unit['_id'])],
                 ['$set' => $updateData]
             );
         }
+    }
+
+    public function runUnitChecks($unit)
+    {
+        return $this->unitChecks($unit);
     }
 
     protected function fixRentalDatesTo2026()

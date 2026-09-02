@@ -4,11 +4,7 @@ require_once __DIR__ . '/../../../vendor/autoload.php';
 
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
-use Dotenv\Dotenv;
 use MongoDB\Operation\FindOneAndUpdate;
-
-$dotenv = Dotenv::createImmutable(__DIR__ . '/../../../');
-$dotenv->load();
 
 class IncidentService {
     private $incidentCollection;
