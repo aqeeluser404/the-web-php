@@ -5,3 +5,4 @@ keys
 tests
 server/cron/*
 !server/cron/checkTokens.php
+server/find-and-fix-corrupted-rental.php

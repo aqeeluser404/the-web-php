@@ -41,7 +41,7 @@ class UnitService
 
     protected function unitChecks($unit)
     {
-        error_log("unitChecks called for unit: " . json_encode($unit));
+        // error_log("unitChecks called for unit: " . json_encode($unit));
         $updateData = [];
 
         // ============================================================
@@ -88,7 +88,7 @@ class UnitService
                 $updateData['currentOccupants'] = 0;
                 $updateData['genderAssignment'] = null;
                 
-                error_log("Unit {$unit['unitNumber']} (year {$unitYear}) has been unlocked");
+                // error_log("Unit {$unit['unitNumber']} (year {$unitYear}) has been unlocked");
                 
                 if (!empty($updateData)) {
                     $this->unitCollection->updateOne(
