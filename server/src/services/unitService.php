@@ -37,12 +37,145 @@ class UnitService
         return null;
     }
 
+    // Helpers
+
+    // ============================================================
+    // HELPER: Get sub-units as array
+    // ============================================================
+    private function getSubUnitsArray($unit): array
+    {
+        if (empty($unit['subUnits'])) {
+            return [];
+        }
+        return $unit['subUnits'] instanceof \MongoDB\Model\BSONArray
+            ? $unit['subUnits']->getArrayCopy()
+            : (array) $unit['subUnits'];
+    }
+
+    // ============================================================
+    // HELPER: Find sub-unit index by filter
+    // ============================================================
+    private function findSubUnitIndex($subUnitsArray, $filter): ?int
+    {
+        foreach ($subUnitsArray as $index => $subUnit) {
+            $subUnit = $subUnit instanceof \MongoDB\Model\BSONDocument ? $subUnit->getArrayCopy() : $subUnit;
+            if (
+                (isset($filter['roomType']) && ($subUnit['roomType'] ?? null) === $filter['roomType']) ||
+                (isset($filter['bedType']) && ($subUnit['bedType'] ?? null) === $filter['bedType'])
+            ) {
+                return $index;
+            }
+        }
+        return null;
+    }
+
+    // ============================================================
+    // HELPER: Lock a specific sub-unit by index
+    // ============================================================
+    private function lockSubUnitByIndex($unit, $subUnitFilter, $rentalId = null)
+    {
+        if (!$subUnitFilter) {
+            return;
+        }
+
+        $subUnitsArray = $this->getSubUnitsArray($unit);
+        $roomIndex = $this->findSubUnitIndex($subUnitsArray, $subUnitFilter);
+
+        if ($roomIndex === null) {
+            error_log("lockSubUnitByIndex WARNING: could not find matching sub-unit on unit {$unit['_id']} — filter: " . json_encode($subUnitFilter));
+            return;
+        }
+
+        $this->unitCollection->updateOne(
+            ['_id' => new ObjectId($unit['_id'])],
+            [
+                '$set' => [
+                    "subUnits.{$roomIndex}.isAvailable" => false
+                ],
+                '$push' => ['rentedHistory' => new ObjectId($rentalId)]
+            ]
+        );
+    }
+
+    // ============================================================
+    // HELPER: Free a specific sub-unit by index
+    // ============================================================
+    private function freeSubUnitByIndex($unit, $subUnitFilter, $rentalId = null)
+    {
+        if (!$subUnitFilter) {
+            return;
+        }
+
+        $subUnitsArray = $this->getSubUnitsArray($unit);
+        $roomIndex = $this->findSubUnitIndex($subUnitsArray, $subUnitFilter);
+
+        if ($roomIndex === null) {
+            error_log("freeSubUnitByIndex WARNING: could not find matching sub-unit on unit {$unit['_id']} — filter: " . json_encode($subUnitFilter));
+            return;
+        }
+
+        $this->unitCollection->updateOne(
+            ['_id' => new ObjectId($unit['_id'])],
+            ['$set' => [
+                "subUnits.{$roomIndex}.isAvailable" => true,
+                "subUnits.{$roomIndex}.reservedBy" => null,
+                "subUnits.{$roomIndex}.reservedAt" => null
+            ]]
+        );
+    }
+
+    // ============================================================
+    // HELPER: Free ALL sub-units (year-based cleanup)
+    // ============================================================
+    private function freeAllSubUnits($unit)
+    {
+        if (empty($unit['subUnits'])) {
+            return;
+        }
+
+        $subUnitsArray = $this->getSubUnitsArray($unit);
+
+        foreach ($subUnitsArray as $key => $subUnit) {
+            $this->unitCollection->updateOne(
+                ['_id' => new ObjectId($unit['_id'])],
+                [
+                    '$set' => [
+                        "subUnits.{$key}.isAvailable" => true,
+                        "subUnits.{$key}.reservedBy" => null,
+                        "subUnits.{$key}.reservedAt" => null
+                    ],
+                    '$unset' => [
+                        "subUnits.{$key}.extended" => '',
+                        "subUnits.{$key}.extendedToYear" => ''
+                    ]
+                ]
+            );
+        }
+    }
+
+
+    // ============================================================
+    // PUBLIC WRAPPER
+    // ============================================================
+    public function runUnitChecks($unit, $subUnitFilter = null, $rentalId = null, $action = 'free')
+    {
+        return $this->unitChecks($unit, $subUnitFilter, $rentalId, $action);
+    }
+
     // ─── CORRECTING HANDLERS ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    protected function unitChecks($unit)
+    protected function unitChecks($unit, $subUnitFilter = null, $rentalId = null, $action = 'free')
     {
-        // error_log("unitChecks called for unit: " . json_encode($unit));
         $updateData = [];
+
+        // If a specific sub-unit needs to be acted on first
+        if ($subUnitFilter) {
+            if ($action === 'lock') {
+                $this->lockSubUnitByIndex($unit, $subUnitFilter, $rentalId);
+            } else {
+                $this->freeSubUnitByIndex($unit, $subUnitFilter, $rentalId);
+            }
+        }
 
         // ============================================================
         // 1. YEAR-BASED CLEANUP (auto-unlock expired units)
@@ -51,44 +184,17 @@ class UnitService
         $unitYear = $unit['unitYear'] ?? $currentYear;
         
         if ($unitYear < $currentYear) {
-            // Check if there are any ACTIVE rentals for this unit
             $activeRental = $this->rentalCollection->findOne([
                 'unit' => new ObjectId($unit['_id']),
                 'status' => 'Active'
             ]);
             
-            // If no active rentals, unlock everything
             if (!$activeRental) {
-                // Unlock all sub-units
-                if (!empty($unit['subUnits'])) {
-                    $subUnitsArray = $unit['subUnits'] instanceof \MongoDB\Model\BSONArray
-                        ? $unit['subUnits']->getArrayCopy()
-                        : (array) $unit['subUnits'];
-                    
-                    foreach ($subUnitsArray as $key => $subUnit) {
-                        $this->unitCollection->updateOne(
-                            ['_id' => new ObjectId($unit['_id'])],
-                            [
-                                '$set' => [
-                                    "subUnits.{$key}.isAvailable" => true,
-                                    "subUnits.{$key}.reservedBy" => null,
-                                    "subUnits.{$key}.reservedAt" => null
-                                ],
-                                '$unset' => [
-                                    "subUnits.{$key}.extended" => '',
-                                    "subUnits.{$key}.extendedToYear" => ''
-                                ]
-                            ]
-                        );
-                    }
-                }
+                $this->freeAllSubUnits($unit);
                 
-                // Reset unit
                 $updateData['unitStatus'] = 'Available';
                 $updateData['currentOccupants'] = 0;
                 $updateData['genderAssignment'] = null;
-                
-                // error_log("Unit {$unit['unitNumber']} (year {$unitYear}) has been unlocked");
                 
                 if (!empty($updateData)) {
                     $this->unitCollection->updateOne(
@@ -96,7 +202,7 @@ class UnitService
                         ['$set' => $updateData]
                     );
                 }
-                return; // Exit early
+                return;
             }
         }
 
@@ -104,26 +210,14 @@ class UnitService
         // 2. COUNT OCCUPIED SUB-UNITS
         // ============================================================
         $occupiedCount = 0;
-        if (!empty($unit['subUnits'])) {
-            $subUnitsArray = $unit['subUnits'] instanceof \MongoDB\Model\BSONArray
-                ? $unit['subUnits']->getArrayCopy()
-                : (array) $unit['subUnits'];
-            
-            foreach ($subUnitsArray as $subUnit) {
-                if ($subUnit instanceof \MongoDB\Model\BSONDocument) {
-                    $subUnit = $subUnit->getArrayCopy();
-                }
-                $val = $subUnit['isAvailable'] ?? null;
-                $isAvailable = filter_var($val, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-                if ($isAvailable === false) {
-                    $occupiedCount++;
-                }
+        $subUnitsArray = $this->getSubUnitsArray($unit);
+        foreach ($subUnitsArray as $subUnit) {
+            $subUnit = $subUnit instanceof \MongoDB\Model\BSONDocument ? $subUnit->getArrayCopy() : $subUnit;
+            $isAvailable = filter_var($subUnit['isAvailable'] ?? null, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($isAvailable === false) {
+                $occupiedCount++;
             }
-        } else {
-            $occupiedCount = $unit['currentOccupants'] ?? 0;
-            error_log("WARNING: Unit {$unit['unitNumber']} has no subUnits array, keeping currentOccupants = {$occupiedCount}");
         }
-        
         $updateData['currentOccupants'] = $occupiedCount;
 
         // ============================================================
@@ -135,12 +229,9 @@ class UnitService
         // ============================================================
         // 4. GENDER ASSIGNMENT
         // ============================================================
-        // If unit is empty → clear gender
         if ($occupiedCount == 0) {
             $updateData['genderAssignment'] = null;
-        }
-        // If exactly 1 occupant → assign gender from that user
-        else if ($occupiedCount === 1 && empty($unit['genderAssignment'])) {
+        } else if ($occupiedCount === 1 && empty($unit['genderAssignment'])) {
             $rental = $this->rentalCollection->findOne([
                 'unit' => new ObjectId($unit['_id']),
                 'status' => 'Active'
@@ -154,7 +245,7 @@ class UnitService
         }
 
         // ============================================================
-        // 5. ENSURE GENDER CONSISTENCY ACROSS SAME UNIT NUMBER
+        // 5. ENSURE GENDER CONSISTENCY
         // ============================================================
         if (!empty($updateData['genderAssignment'])) {
             $existingUnit = $this->unitCollection->findOne([
@@ -172,7 +263,6 @@ class UnitService
         // ============================================================
         if (!isset($unit['unitYear']) || $unit['unitYear'] === null) {
             $updateData['unitYear'] = 2026;
-            error_log("Added unitYear = 2026 to unit: {$unit['unitNumber']}");
         }
 
         // ============================================================
@@ -184,11 +274,6 @@ class UnitService
                 ['$set' => $updateData]
             );
         }
-    }
-
-    public function runUnitChecks($unit)
-    {
-        return $this->unitChecks($unit);
     }
 
     protected function fixRentalDatesTo2026()
