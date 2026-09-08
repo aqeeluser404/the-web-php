@@ -139,6 +139,90 @@ class RentalService
             throw $e;
         }
     }
+    
+    private function calculateAddonFees($planName, $parkingData = null, $shuttleData = null)
+    {
+        $parkingFee = 0.0;
+        $shuttleFee = 0.0;
+
+        // Parking fees based on plan
+        if (!empty($parkingData) && !empty($parkingData['hasParking'])) {
+            if ($planName === '10-month') {
+                $parkingFee = 500.0;
+            } elseif ($planName === '11-month') {
+                $parkingFee = 455.0;
+            } elseif ($planName === 'annual') {
+                $parkingFee = 5000.0;
+            } else {
+                $parkingFee = (float) ($parkingData['fee'] ?? 0.0);
+            }
+        }
+
+        // Shuttle fees based on plan
+        if (!empty($shuttleData) && !empty($shuttleData['hasShuttle'])) {
+            if ($planName === '10-month') {
+                $shuttleFee = 800.0;
+            } elseif ($planName === '11-month') {
+                $shuttleFee = 800.0;
+            } elseif ($planName === 'annual') {
+                $shuttleFee = 8000.0;
+            } else {
+                $shuttleFee = (float) ($shuttleData['fee'] ?? 0.0);
+            }
+        }
+
+        return [
+            'parkingFee' => $parkingFee,
+            'shuttleFee' => $shuttleFee
+        ];
+    }
+
+    private function extractMatchedPrice($newSubUnit, $oldPriceName, $unitDoc)
+    {
+        $priceOptions = $newSubUnit['price'] ?? [];
+        
+        // If price is directly a number or a simple array
+        if (is_numeric($priceOptions)) {
+            return [
+                'name' => $oldPriceName ?? 'default',
+                'price' => (float) $priceOptions
+            ];
+        }
+        
+        // If price is an array with a single price value
+        if (isset($priceOptions['price']) && is_numeric($priceOptions['price'])) {
+            return [
+                'name' => $oldPriceName ?? $priceOptions['name'] ?? 'default',
+                'price' => (float) $priceOptions['price']
+            ];
+        }
+        
+        // If price is an array of options (the normal case)
+        if (is_array($priceOptions)) {
+            // Try to find matching by name
+            foreach ($priceOptions as $option) {
+                $option = $option instanceof \MongoDB\Model\BSONDocument ? $option->getArrayCopy() : $option;
+                if ($oldPriceName && ($option['name'] ?? null) === $oldPriceName) {
+                    return $option;
+                }
+            }
+            
+            // No match, use first option
+            $firstOption = reset($priceOptions);
+            if ($firstOption) {
+                $firstOption = $firstOption instanceof \MongoDB\Model\BSONDocument 
+                    ? $firstOption->getArrayCopy() 
+                    : $firstOption;
+                return $firstOption;
+            }
+        }
+        
+        // Ultimate fallback
+        return [
+            'name' => $oldPriceName ?? 'default',
+            'price' => (float) ($unitDoc['unitPrice'] ?? 0.0)
+        ];
+    }
 
     public function reassignUnitService($reassignDetails) {
         try {
@@ -160,12 +244,19 @@ class RentalService
                 throw new Exception('Target unit not found');
             }
 
+            if (!($unitDoc['accessKey']['isShared'] ?? false)) {
+                $userDoc = $this->userCollection->findOne(['_id' => $rentalToUpdate['user']]);
+                $userGender = $userDoc['gender'] ?? null;
+                if (!empty($unitDoc['genderAssignment']) && $unitDoc['genderAssignment'] !== $userGender) {
+                    throw new Exception("This unit is only available for {$unitDoc['genderAssignment']}s.");
+                }
+            }
+
             $newSubUnit = $reassignDetails['newSubUnit'] ?? null;
             if (!$newSubUnit) {
                 throw new Exception('New subunit details missing');
             }
 
-            // Update rental with full subUnit details
             $unitTypeForRental = $newSubUnit['roomType'] 
                 ?? $newSubUnit['bedType'] 
                 ?? $unitDoc['unitType'];
@@ -174,55 +265,21 @@ class RentalService
             // RECALCULATE TOTAL PRICE
             // ============================================================
             // 1. Get base price from the new sub-unit
-            $basePrice = 0.0;
-            $priceOptions = $newSubUnit['price'] ?? [];
-            
-            // Find the matching price based on the old plan name
             $oldPriceName = $rentalToUpdate['selectedSubUnits']['price']['name'] ?? null;
-            $matchedPrice = null;
-            
-            foreach ($priceOptions as $option) {
-                $option = $option instanceof \MongoDB\Model\BSONDocument ? $option->getArrayCopy() : $option;
-                if ($oldPriceName && ($option['name'] ?? null) === $oldPriceName) {
-                    $matchedPrice = $option;
-                    break;
-                }
-            }
-            
-            // If no match found, use the first price option
-            if (!$matchedPrice && !empty($priceOptions)) {
-                $matchedPrice = $priceOptions[0] instanceof \MongoDB\Model\BSONDocument
-                    ? $priceOptions[0]->getArrayCopy()
-                    : $priceOptions[0];
-            }
-            
-            $basePrice = (float) ($matchedPrice['price'] ?? $newSubUnit['price']['price'] ?? 0.0);
+            $matchedPrice = $this->extractMatchedPrice($newSubUnit, $oldPriceName, $unitDoc);
 
-            // 2. Get parking fee
-            $parkingFee = 0.0;
+            $basePrice = (float) ($matchedPrice['price'] ?? 0.0);
+            $planName = $matchedPrice['name'] ?? null;
+
+            // 2. Use the helper to calculate addon fees
             $parkingData = $rentalToUpdate['parking'] ?? [];
-            if (!empty($parkingData) && !empty($parkingData['hasParking'])) {
-                $planName = $matchedPrice['name'] ?? $newSubUnit['price']['name'] ?? null;
-                
-                if ($planName === '10-month') {
-                    $parkingFee = 495.0;
-                } elseif ($planName === '11-month') {
-                    $parkingFee = 450.0;
-                } elseif ($planName === 'annual') {
-                    $parkingFee = 4950.0;
-                } else {
-                    $parkingFee = (float) ($parkingData['fee'] ?? 0.0);
-                }
-            }
-
-            // 3. Get shuttle fee
-            $shuttleFee = 0.0;
             $shuttleData = $rentalToUpdate['shuttle'] ?? [];
-            if (!empty($shuttleData) && !empty($shuttleData['hasShuttle'])) {
-                $shuttleFee = (float) ($shuttleData['fee'] ?? 0.0);
-            }
+            $fees = $this->calculateAddonFees($planName, $parkingData, $shuttleData);
 
-            // 4. Calculate total rental price - ENSURE ALL ARE FLOATS
+            $parkingFee = $fees['parkingFee'];
+            $shuttleFee = $fees['shuttleFee'];
+
+            // 3. Calculate total rental price
             $totalRentalPrice = (float) $basePrice + (float) $parkingFee + (float) $shuttleFee;
 
             // ============================================================
@@ -238,7 +295,8 @@ class RentalService
                     'price' => $matchedPrice ?: $newSubUnit['price'],
                     'isAvailable' => true
                 ],
-                'rentalPrice' => (float) $totalRentalPrice
+                'rentalPrice' => (float) $totalRentalPrice,
+                'unitYear' => (int) ($unitDoc['unitYear'] ?? date('Y')) 
             ];
 
             // Update parking with correct fee
@@ -267,7 +325,6 @@ class RentalService
                 $oldUnitId = $rentalToUpdate['unit'];
                 $oldSubUnit = $rentalToUpdate['selectedSubUnits'] ?? null;
 
-                // Free the old unit's sub-unit and reconcile
                 if ($oldSubUnit) {
                     $oldUnit = $this->unitCollection->findOne(['_id' => new ObjectId($oldUnitId)]);
                     if ($oldUnit) {
@@ -280,7 +337,6 @@ class RentalService
                     }
                 }
 
-                // Lock the new unit's sub-unit and reconcile
                 if ($newSubUnit) {
                     $this->getUnitService()->runUnitChecks(
                         $this->unitCollection->findOne(['_id' => $unitDoc['_id']]),
@@ -300,7 +356,7 @@ class RentalService
         }
     }
 
-    public function extendRentalToNewYear($rentalId, $newEndDate)
+    public function extendRentalToNewYear($rentalId, $newEndDate, $overrideUnitId = null, $overrideSubUnitFilter = null)
     {
         try {
             $rental = $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
@@ -315,12 +371,22 @@ class RentalService
 
             $newEndYear = (int) (new DateTime($newEndDate))->format('Y');
 
-            $newUnit = $this->unitCollection->findOne([
-                'unitNumber' => $oldUnit['unitNumber'],
-                'unitYear' => $newEndYear
-            ]);
-            if (!$newUnit) {
-                throw new Exception("No {$newEndYear} unit found matching unitNumber {$oldUnit['unitNumber']}");
+            if ($overrideUnitId) {
+                $newUnit = $this->unitCollection->findOne([
+                    '_id' => new ObjectId($overrideUnitId),
+                    'unitYear' => $newEndYear
+                ]);
+                if (!$newUnit) {
+                    throw new Exception("Target unit not found for year {$newEndYear}");
+                }
+            } else {
+                $newUnit = $this->unitCollection->findOne([
+                    'unitNumber' => $oldUnit['unitNumber'],
+                    'unitYear' => $newEndYear
+                ]);
+                if (!$newUnit) {
+                    throw new Exception("No {$newEndYear} unit found matching unitNumber {$oldUnit['unitNumber']}");
+                }
             }
 
             $subUnitFilter = $rental['selectedSubUnits'] ?? null;
@@ -328,27 +394,19 @@ class RentalService
                 throw new Exception('Rental has no selected sub-unit to match');
             }
 
-            $newSubUnits = $newUnit['subUnits'] instanceof \MongoDB\Model\BSONArray
-                ? $newUnit['subUnits']->getArrayCopy()
-                : (array) $newUnit['subUnits'];
+            $targetSubUnitFilter = $overrideSubUnitFilter ?? $subUnitFilter;
 
-            $roomIndex = null;
-            foreach ($newSubUnits as $index => $subUnit) {
-                $subUnit = $subUnit instanceof \MongoDB\Model\BSONDocument ? $subUnit->getArrayCopy() : $subUnit;
-                if (
-                    (isset($subUnitFilter['roomType']) && ($subUnit['roomType'] ?? null) === $subUnitFilter['roomType']) ||
-                    (isset($subUnitFilter['bedType']) && ($subUnit['bedType'] ?? null) === $subUnitFilter['bedType'])
-                ) {
-                    $roomIndex = $index;
-                    break;
-                }
-            }
+            $newSubUnits = $this->getSubUnitsArray($newUnit);
+            $roomIndex = $this->findSubUnitIndex($newSubUnits, $targetSubUnitFilter);
 
             if ($roomIndex === null) {
                 throw new Exception("No matching sub-unit found in {$newEndYear} unit");
             }
 
-            $targetSubUnit = $newSubUnits[$roomIndex];
+            $targetSubUnit = $newSubUnits[$roomIndex] instanceof \MongoDB\Model\BSONDocument
+                ? $newSubUnits[$roomIndex]->getArrayCopy()
+                : $newSubUnits[$roomIndex];
+
             $isAvailable = filter_var($targetSubUnit['isAvailable'] ?? true, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
             if ($isAvailable === false) {
                 throw new Exception("The {$newEndYear} version of this room is already occupied");
@@ -366,50 +424,70 @@ class RentalService
                 }
             }
 
-            // Pick the matching price plan
-            $priceOptions = $targetSubUnit['price'] ?? [];
-            $priceOptions = $priceOptions instanceof \MongoDB\Model\BSONArray ? $priceOptions->getArrayCopy() : (array) $priceOptions;
-
             $oldPriceName = $rental['selectedSubUnits']['price']['name'] ?? null;
-            $matchedPrice = null;
-
-            foreach ($priceOptions as $option) {
-                $option = $option instanceof \MongoDB\Model\BSONDocument ? $option->getArrayCopy() : $option;
-                if ($oldPriceName && ($option['name'] ?? null) === $oldPriceName) {
-                    $matchedPrice = $option;
-                    break;
-                }
-            }
-
-            if (!$matchedPrice && !empty($priceOptions)) {
-                $matchedPrice = $priceOptions[0] instanceof \MongoDB\Model\BSONDocument
-                    ? $priceOptions[0]->getArrayCopy()
-                    : $priceOptions[0];
-            }
+            $matchedPrice = $this->extractMatchedPrice($targetSubUnit, $oldPriceName, $newUnit);
 
             if (!$matchedPrice) {
                 throw new Exception("No valid price plan found on the {$newEndYear} unit's matching sub-unit");
             }
 
-            // ============================================================
-            // ✅ STEP 1: LOCK the NEW unit's sub-unit (student is staying)
-            // ============================================================
+            $basePrice = (float) ($matchedPrice['price'] ?? 0.0);
+            $planName = $matchedPrice['name'] ?? null;
+
+            $parkingData = $rental['parking'] ?? [];
+            $shuttleData = $rental['shuttle'] ?? [];
+            $fees = $this->calculateAddonFees($planName, $parkingData, $shuttleData);
+
+            $parkingFee = $fees['parkingFee'];
+            $shuttleFee = $fees['shuttleFee'];
+            $totalRentalPrice = (float) $basePrice + (float) $parkingFee + (float) $shuttleFee;
+
+            // Lock the new unit's sub-unit
             $this->getUnitService()->runUnitChecks(
                 $this->unitCollection->findOne(['_id' => $newUnit['_id']]),
-                $subUnitFilter,
+                $targetSubUnitFilter,
                 $rental['_id'],
                 'lock'
             );
 
             // ============================================================
-            // ✅ STEP 2: Keep the OLD unit's sub-unit LOCKED (same student)
+            // Determine whether this is the same physical room as before
             // ============================================================
-            // Just reconcile the old unit without freeing it
-            $this->getUnitService()->runUnitChecks(
-                $this->unitCollection->findOne(['_id' => $oldUnit['_id']])
+            $isSameRoom = (
+                ($subUnitFilter['bedType'] ?? null) === ($targetSubUnit['bedType'] ?? null) &&
+                ($subUnitFilter['roomType'] ?? null) === ($targetSubUnit['roomType'] ?? null)
             );
 
-            // Build the new selectedSubUnit
+            if ($isSameRoom) {
+                // Same room across years — keep the chain root locked, just reconcile counts.
+                // Preserve renewedFromUnit if this rental was already chained from an earlier
+                // year; only set it fresh if this is the first extension.
+                $newRenewedFromUnit = $rental['renewedFromUnit'] ?? $oldUnit['_id'];
+
+                $this->getUnitService()->runUnitChecks(
+                    $this->unitCollection->findOne(['_id' => $oldUnit['_id']])
+                );
+            } else {
+                // Different room — free the immediate old room, it's no longer occupied
+                $this->getUnitService()->runUnitChecks(
+                    $this->unitCollection->findOne(['_id' => $oldUnit['_id']]),
+                    $subUnitFilter,
+                    $rental['_id'],
+                    'free'
+                );
+
+                // If a chain root exists further back and differs from the immediate old
+                // unit, free that too — the whole chain is broken by the room change.
+                if (!empty($rental['renewedFromUnit']) && (string) $rental['renewedFromUnit'] !== (string) $oldUnit['_id']) {
+                    $priorUnit = $this->unitCollection->findOne(['_id' => $rental['renewedFromUnit']]);
+                    if ($priorUnit) {
+                        $this->getUnitService()->runUnitChecks($priorUnit, $subUnitFilter, $rental['_id'], 'free');
+                    }
+                }
+
+                $newRenewedFromUnit = null; // chain broken, nothing left to keep in sync
+            }
+
             $newSelectedSubUnit = [
                 'type' => $targetSubUnit['type'] ?? null,
                 'roomType' => $targetSubUnit['roomType'] ?? null,
@@ -421,46 +499,228 @@ class RentalService
                 'isAvailable' => true
             ];
 
-            // Move the rental to point at the new-year unit
+            // Log this transition — pure audit trail, always appended regardless of same/different room
+            $historyEntry = [
+                'fromUnit' => $oldUnit['_id'],
+                'fromUnitNumber' => $oldUnit['unitNumber'],
+                'fromSubUnit' => [
+                    'roomType' => $subUnitFilter['roomType'] ?? null,
+                    'bedType' => $subUnitFilter['bedType'] ?? null
+                ],
+                'fromYear' => (int) ($oldUnit['unitYear'] ?? $rental['unitYear'] ?? $newEndYear - 1),
+                'toUnit' => $newUnit['_id'],
+                'toUnitNumber' => $newUnit['unitNumber'],
+                'toSubUnit' => [
+                    'roomType' => $targetSubUnit['roomType'] ?? null,
+                    'bedType' => $targetSubUnit['bedType'] ?? null
+                ],
+                'toYear' => $newEndYear,
+                'sameRoom' => $isSameRoom,
+                'changedAt' => new UTCDateTime()
+            ];
+
             $update = [
                 'unit' => $newUnit['_id'],
-                'unitType' => $subUnitFilter['bedType'] ?? $subUnitFilter['roomType'] ?? $rental['unitType'],
+                'unitType' => $targetSubUnitFilter['bedType'] ?? $targetSubUnitFilter['roomType'] ?? $rental['unitType'],
                 'selectedSubUnits' => $newSelectedSubUnit,
-                'rentalPrice' => $rental['rentalPrice'],
+                'rentalPrice' => (float) $totalRentalPrice,
                 'rentalEndDate' => new UTCDateTime(strtotime($newEndDate) * 1000),
                 'unitYear' => $newEndYear,
                 'renewed' => true,
-                'renewedFromUnit' => $oldUnit['_id'],
+                'renewedFromUnit' => $newRenewedFromUnit,
                 'renewedToUnit' => $newUnit['_id']
             ];
 
-            // In extendRentalToNewYear, keep parking and shuttle as-is
-            if (!empty($rental['parking'])) {
+            if (!empty($parkingData)) {
                 $update['parking'] = [
-                    'hasParking' => (bool) ($rental['parking']['hasParking'] ?? false),
-                    'fee' => (float) ($rental['parking']['fee'] ?? 0.0)
+                    'hasParking' => (bool) ($parkingData['hasParking'] ?? false),
+                    'fee' => (float) $parkingFee
                 ];
             }
 
-            if (!empty($rental['shuttle'])) {
+            if (!empty($shuttleData)) {
                 $update['shuttle'] = [
-                    'hasShuttle' => (bool) ($rental['shuttle']['hasShuttle'] ?? false),
-                    'fee' => (float) ($rental['shuttle']['fee'] ?? 0.0)
+                    'hasShuttle' => (bool) ($shuttleData['hasShuttle'] ?? false),
+                    'fee' => (float) $shuttleFee
                 ];
             }
 
             $this->rentalCollection->updateOne(
                 ['_id' => new ObjectId($rentalId)],
-                ['$set' => $update]
+                [
+                    '$set' => $update,
+                    '$push' => ['renewalHistory' => $historyEntry]
+                ]
             );
 
             return $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
-            
+
         } catch (Exception $e) {
             error_log('Extend rental to new year error: ' . $e->getMessage());
             throw $e;
         }
     }
+    // public function extendRentalToNewYear($rentalId, $newEndDate)
+    // {
+    //     try {
+    //         $rental = $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
+    //         if (!$rental) {
+    //             throw new Exception('Rental not found');
+    //         }
+
+    //         $oldUnit = $this->unitCollection->findOne(['_id' => $rental['unit']]);
+    //         if (!$oldUnit) {
+    //             throw new Exception('Current unit not found');
+    //         }
+
+    //         $newEndYear = (int) (new DateTime($newEndDate))->format('Y');
+
+    //         $newUnit = $this->unitCollection->findOne([
+    //             'unitNumber' => $oldUnit['unitNumber'],
+    //             'unitYear' => $newEndYear
+    //         ]);
+    //         if (!$newUnit) {
+    //             throw new Exception("No {$newEndYear} unit found matching unitNumber {$oldUnit['unitNumber']}");
+    //         }
+
+    //         $subUnitFilter = $rental['selectedSubUnits'] ?? null;
+    //         if (!$subUnitFilter) {
+    //             throw new Exception('Rental has no selected sub-unit to match');
+    //         }
+
+    //         $newSubUnits = $newUnit['subUnits'] instanceof \MongoDB\Model\BSONArray
+    //             ? $newUnit['subUnits']->getArrayCopy()
+    //             : (array) $newUnit['subUnits'];
+
+    //         $roomIndex = null;
+    //         foreach ($newSubUnits as $index => $subUnit) {
+    //             $subUnit = $subUnit instanceof \MongoDB\Model\BSONDocument ? $subUnit->getArrayCopy() : $subUnit;
+    //             if (
+    //                 (isset($subUnitFilter['roomType']) && ($subUnit['roomType'] ?? null) === $subUnitFilter['roomType']) ||
+    //                 (isset($subUnitFilter['bedType']) && ($subUnit['bedType'] ?? null) === $subUnitFilter['bedType'])
+    //             ) {
+    //                 $roomIndex = $index;
+    //                 break;
+    //             }
+    //         }
+
+    //         if ($roomIndex === null) {
+    //             throw new Exception("No matching sub-unit found in {$newEndYear} unit");
+    //         }
+
+    //         $targetSubUnit = $newSubUnits[$roomIndex];
+    //         $isAvailable = filter_var($targetSubUnit['isAvailable'] ?? true, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+    //         if ($isAvailable === false) {
+    //             throw new Exception("The {$newEndYear} version of this room is already occupied");
+    //         }
+
+    //         if (($newUnit['currentOccupants'] ?? 0) >= ($newUnit['unitOccupants'] ?? 0)) {
+    //             throw new Exception("The {$newEndYear} unit is already at full capacity");
+    //         }
+
+    //         if (!($newUnit['accessKey']['isShared'] ?? false)) {
+    //             $userDoc = $this->userCollection->findOne(['_id' => $rental['user']]);
+    //             $userGender = $userDoc['gender'] ?? null;
+    //             if (!empty($newUnit['genderAssignment']) && $newUnit['genderAssignment'] !== $userGender) {
+    //                 throw new Exception("This unit is only available for {$newUnit['genderAssignment']}s.");
+    //             }
+    //         }
+
+    //         // ============================================================
+    //         // RECALCULATE TOTAL PRICE (just like reassignUnitService)
+    //         // ============================================================
+    //         // 1. Get base price from the new sub-unit
+    //         $oldPriceName = $rental['selectedSubUnits']['price']['name'] ?? null;
+    //         $matchedPrice = $this->extractMatchedPrice($targetSubUnit, $oldPriceName, $newUnit);
+
+    //         if (!$matchedPrice) {
+    //             throw new Exception("No valid price plan found on the {$newEndYear} unit's matching sub-unit");
+    //         }
+
+    //         $basePrice = (float) ($matchedPrice['price'] ?? 0.0);
+    //         $planName = $matchedPrice['name'] ?? null;
+
+    //         // 2. Calculate addon fees using the helper
+    //         $parkingData = $rental['parking'] ?? [];
+    //         $shuttleData = $rental['shuttle'] ?? [];
+    //         $fees = $this->calculateAddonFees($planName, $parkingData, $shuttleData);
+
+    //         $parkingFee = $fees['parkingFee'];
+    //         $shuttleFee = $fees['shuttleFee'];
+
+    //         // 3. Calculate total rental price
+    //         $totalRentalPrice = (float) $basePrice + (float) $parkingFee + (float) $shuttleFee;
+
+    //         // ============================================================
+    //         // ✅ STEP 1: LOCK the NEW unit's sub-unit (student is staying)
+    //         // ============================================================
+    //         $this->getUnitService()->runUnitChecks(
+    //             $this->unitCollection->findOne(['_id' => $newUnit['_id']]),
+    //             $subUnitFilter,
+    //             $rental['_id'],
+    //             'lock'
+    //         );
+
+    //         // ============================================================
+    //         // ✅ STEP 2: Keep the OLD unit's sub-unit LOCKED (same student)
+    //         // ============================================================
+    //         $this->getUnitService()->runUnitChecks(
+    //             $this->unitCollection->findOne(['_id' => $oldUnit['_id']])
+    //         );
+
+    //         // Build the new selectedSubUnit
+    //         $newSelectedSubUnit = [
+    //             'type' => $targetSubUnit['type'] ?? null,
+    //             'roomType' => $targetSubUnit['roomType'] ?? null,
+    //             'bedType' => $targetSubUnit['bedType'] ?? null,
+    //             'price' => [
+    //                 'name' => $matchedPrice['name'] ?? 'default',
+    //                 'price' => (float) ($matchedPrice['price'] ?? 0)
+    //             ],
+    //             'isAvailable' => true
+    //         ];
+
+    //         // Move the rental to point at the new-year unit
+    //         $update = [
+    //             'unit' => $newUnit['_id'],
+    //             'unitType' => $subUnitFilter['bedType'] ?? $subUnitFilter['roomType'] ?? $rental['unitType'],
+    //             'selectedSubUnits' => $newSelectedSubUnit,
+    //             'rentalPrice' => (float) $totalRentalPrice,  // ✅ RECALCULATED price
+    //             'rentalEndDate' => new UTCDateTime(strtotime($newEndDate) * 1000),
+    //             'unitYear' => $newEndYear,
+    //             'renewed' => true,
+    //             'renewedFromUnit' => $oldUnit['_id'],
+    //             'renewedToUnit' => $newUnit['_id']
+    //         ];
+
+    //         // Update parking with correct fee
+    //         if (!empty($parkingData)) {
+    //             $update['parking'] = [
+    //                 'hasParking' => (bool) ($parkingData['hasParking'] ?? false),
+    //                 'fee' => (float) $parkingFee
+    //             ];
+    //         }
+
+    //         // Update shuttle with correct fee
+    //         if (!empty($shuttleData)) {
+    //             $update['shuttle'] = [
+    //                 'hasShuttle' => (bool) ($shuttleData['hasShuttle'] ?? false),
+    //                 'fee' => (float) $shuttleFee
+    //             ];
+    //         }
+
+    //         $this->rentalCollection->updateOne(
+    //             ['_id' => new ObjectId($rentalId)],
+    //             ['$set' => $update]
+    //         );
+
+    //         return $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
+            
+    //     } catch (Exception $e) {
+    //         error_log('Extend rental to new year error: ' . $e->getMessage());
+    //         throw $e;
+    //     }
+    // }
 
     // ─── HANDLERS ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -559,8 +819,11 @@ class RentalService
                 throw new Exception('Unit not found');
             }
 
-            if ($rentalDetails['status'] === 'Active'
-                && $unitToUpdate['currentOccupants'] >= $unitToUpdate['unitOccupants']) {
+            // ✅ Check if status is set before using it
+            $newStatus = $rentalDetails['status'] ?? null;
+            $currentStatus = $rentalToUpdate['status'] ?? null;
+
+            if ($newStatus === 'Active' && $unitToUpdate['currentOccupants'] >= $unitToUpdate['unitOccupants']) {
                 throw new Exception('Unit is already at full capacity');
             }
 
@@ -571,7 +834,7 @@ class RentalService
             // ============================================================
             // Approval logic (Pending → Active)
             // ============================================================
-            if ($rentalDetails['status'] === 'Active') {
+            if ($newStatus === 'Active') {
                 if ($unitToUpdate['currentOccupants'] >= $unitToUpdate['unitOccupants']) {
                     throw new Exception('Unit is already at full capacity');
                 }
@@ -627,7 +890,7 @@ class RentalService
             // ============================================================
             // Rejection logic (Pending → Rejected)
             // ============================================================
-            if ($rentalDetails['status'] === 'Rejected') {
+            if ($newStatus === 'Rejected') {
                 if ($subUnit) {
                     $this->getUnitService()->runUnitChecks(
                         $this->unitCollection->findOne(['_id' => $unitToUpdate['_id']]),
@@ -641,7 +904,7 @@ class RentalService
             // ============================================================
             // Revert logic (Active → Pending)
             // ============================================================
-            if ($rentalDetails['status'] === 'Pending' && $rentalToUpdate['status'] === 'Active') {
+            if ($newStatus === 'Pending' && $currentStatus === 'Active') {
                 // Pull from rentedHistory
                 $this->unitCollection->updateOne(
                     ['_id' => $unitToUpdate['_id']],

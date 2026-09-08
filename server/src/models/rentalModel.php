@@ -91,6 +91,11 @@ class Rental {
      */
     public $renewedToUnit = null;
 
+    /** 
+     * @var array A log of every year-to-year renewal, including which room was moved to/from 
+     */
+    public $renewalHistory = [];
+
     public function __construct(
         float $rentalPrice,
         string $unit,
@@ -113,7 +118,8 @@ class Rental {
         ?int $unitYear = null,
         ?bool $renewed = null,
         ?string $renewedFromUnit = null,
-        ?string $renewedToUnit = null
+        ?string $renewedToUnit = null,
+        array $renewalHistory = []
     ) {
         $this->applicationDate = new UTCDateTime();
         $this->status = in_array($status, ['Pending', 'Rejected', 'Active', 'Ended']) ? $status : 'Pending';
@@ -128,6 +134,7 @@ class Rental {
         $this->accessKey = $accessKey;
         $this->trafalgarId = $trafalgarId;
         $this->unitYear = $unitYear;
+        $this->renewalHistory = $renewalHistory;
 
         $this->payerData = array_merge([
             'firstName' => '',
@@ -218,6 +225,9 @@ class Rental {
         }
         if ($this->renewedToUnit !== null) {
             $array['renewedToUnit'] = $this->renewedToUnit;
+        }
+        if (!empty($this->renewalHistory)) {
+            $array['renewalHistory'] = $this->renewalHistory;
         }
     
         return $array;

@@ -210,6 +210,10 @@ class UnitService
         // 2. COUNT OCCUPIED SUB-UNITS
         // ============================================================
         $occupiedCount = 0;
+        $refreshed = $this->unitCollection->findOne(['_id' => new ObjectId($unit['_id'])]);
+        if ($refreshed) {
+            $unit = $refreshed;
+        }
         $subUnitsArray = $this->getSubUnitsArray($unit);
         foreach ($subUnitsArray as $subUnit) {
             $subUnit = $subUnit instanceof \MongoDB\Model\BSONDocument ? $subUnit->getArrayCopy() : $subUnit;
