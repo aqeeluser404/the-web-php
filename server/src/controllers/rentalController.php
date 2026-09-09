@@ -48,9 +48,21 @@ class RentalController {
                 throw new Exception('New end date is required');
             }
 
-            $updatedRental = $this->rentalService->extendRentalToNewYear($rentalId, $newEndDate);
+            // Get optional override parameters
+            $overrideUnitId = $body['overrideUnitId'] ?? null;
+            $overrideSubUnitFilter = $body['overrideSubUnitFilter'] ?? null;
+
+            // Pass them to the service
+            $updatedRental = $this->rentalService->extendRentalToNewYear(
+                $rentalId, 
+                $newEndDate, 
+                $overrideUnitId, 
+                $overrideSubUnitFilter
+            );
+            
             return $this->respond($res, $updatedRental, 200);
         } catch (Exception $e) {
+            error_log('Extend rental controller error: ' . $e->getMessage());
             return $this->respond($res, ['error' => $e->getMessage()], 400);
         }
     }

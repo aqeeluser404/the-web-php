@@ -42,7 +42,7 @@ class UnitService
     // ============================================================
     // HELPER: Get sub-units as array
     // ============================================================
-    private function getSubUnitsArray($unit): array
+    public function getSubUnitsArray($unit): array
     {
         if (empty($unit['subUnits'])) {
             return [];
@@ -55,7 +55,7 @@ class UnitService
     // ============================================================
     // HELPER: Find sub-unit index by filter
     // ============================================================
-    private function findSubUnitIndex($subUnitsArray, $filter): ?int
+    public function findSubUnitIndex($subUnitsArray, $filter): ?int
     {
         foreach ($subUnitsArray as $index => $subUnit) {
             $subUnit = $subUnit instanceof \MongoDB\Model\BSONDocument ? $subUnit->getArrayCopy() : $subUnit;
