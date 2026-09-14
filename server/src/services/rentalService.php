@@ -4,6 +4,9 @@ require_once __DIR__ . '/../../../vendor/autoload.php';
 require_once __DIR__ . '/../utils/scoreApi.php';
 require_once __DIR__ . '/../utils/LocalFileHelper.php';
 require_once __DIR__ . '/unitService.php';
+require_once __DIR__ . '/../utils/DateUtils.php';
+require_once __DIR__ . '/../utils/RentalPriceUtils.php';
+require_once __DIR__ . '/../utils/RentalChainUtils.php';
 
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
@@ -27,8 +30,9 @@ class RentalService
         $this->applicationDraftCollection = $db->ApplicationDraft;
         $this->ScoreApi = new ScoreApi();
         $this->localFileHelper = new LocalFileHelper();
-        // $this->unitService = new UnitService();
     }
+
+    // ─── Delegated helpers ───
 
     private function getUnitService()
     {
@@ -38,267 +42,32 @@ class RentalService
         return $this->unitService;
     }
 
-    protected function safeDateFormat($dateValue)
-    {
-        if ($dateValue instanceof UTCDateTime) {
-            return $dateValue->toDateTime()->format('Y-m-d\TH:i:s.vP');
-        }
-        if (is_string($dateValue)) {
-            return $dateValue;
-        }
-        return null;
-    }
-
-    // ─── CORRECTING HANDLERS ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Returns every unit ID in this rental's renewal chain, excluding the
-     * current unit itself — i.e. every prior-year unit that represents the
-     * same physical room and needs to stay locked/freed in sync.
-     */
     private function getChainUnitIds($rental, $currentUnitId): array
     {
-        $ids = [];
-
-        if (!empty($rental['renewalHistory'])) {
-            // ✅ Find the LAST room change break (scanning backwards)
-            // This ensures we only keep units in the CURRENT active chain
-            $breakIndex = -1;
-            for ($i = count($rental['renewalHistory']) - 1; $i >= 0; $i--) {
-                $entry = $rental['renewalHistory'][$i];
-                if (isset($entry['sameRoom']) && $entry['sameRoom'] === false) {
-                    $breakIndex = $i;
-                    break;
-                }
-            }
-
-            // ✅ Only include units from the ACTIVE chain (after the break)
-            foreach ($rental['renewalHistory'] as $index => $entry) {
-                // Skip entries before or at the break
-                if ($breakIndex !== -1 && $index <= $breakIndex) {
-                    continue;
-                }
-
-                // Include the "fromUnit" from active chain entries
-                if (isset($entry['fromUnit']) && 
-                    (string) $entry['fromUnit'] !== (string) $currentUnitId) {
-                    $ids[(string) $entry['fromUnit']] = $entry['fromUnit'];
-                }
-            }
-        }
-
-        // Fallback for rentals extended before renewalHistory existed
-        // Only use this if no history was found AND renewedFromUnit exists
-        if (empty($ids) && !empty($rental['renewedFromUnit']) && 
-            (string) $rental['renewedFromUnit'] !== (string) $currentUnitId) {
-            $ids[(string) $rental['renewedFromUnit']] = $rental['renewedFromUnit'];
-        }
-
-        return array_values($ids);
+        return RentalChainUtils::getChainUnitIds($rental, $currentUnitId);
     }
 
-    public function syncRentalService(): bool
+    private function formatRenewalHistory($history): array
     {
-        try {
-            $units = $this->unitCollection->find();
-            foreach ($units as $unit) {
-                $unitId = (string) $unit['_id'];
-                $unitNumber = $unit['unitNumber'] ?? null;
-                error_log("---- Syncing unit {$unitNumber} ({$unitId}) ----");
-    
-                $rentals = $this->rentalCollection->find(['unit' => $unitId]);
-                $normalizedRentals = [];
-
-                foreach ($rentals as $doc) {
-                    $selected = $doc['selectedSubUnits'] ?? null;
-
-                    $unitTypeForRental = $selected['roomType'] 
-                        ?? $selected['bedType'] 
-                        ?? ($unit['unitType'] ?? null);
-
-                    $normalizedRentals[] = [
-                        '_id' => (string) $doc['_id'],
-                        'status' => $doc['status'] ?? null,
-                        'user' => (string) ($doc['user'] ?? ''), 
-                        'unitType' => $unitTypeForRental,
-                        'selectedSubUnits' => [
-                            'type' => $selected['type'] ?? null,
-                            'roomType' => $selected['roomType'] ?? null,
-                            'bedType' => $selected['bedType'] ?? null,
-                            'isAvailable' => $selected['isAvailable'] ?? true,
-                            'price' => $selected['price'] ?? null,
-                        ],
-                    ];
-                }
-                error_log("Found " . count($normalizedRentals) . " rentals for unit.");
-    
-                // Filter active rentals
-                $activeRentals = array_filter($normalizedRentals, fn($r) => $r['status'] === 'Active');
-                error_log("Active rentals count: " . count($activeRentals));
-    
-                // 1. currentOccupants
-                $currentOccupants = count($activeRentals);
-    
-                // 2. rentedHistory
-                $rentedHistory = array_map(fn($r) => $r['_id'], $activeRentals);
-    
-                // 3. subUnits availability
-                $subUnits = $unit['subUnits'] ?? [];
-                foreach ($subUnits as &$subUnit) {
-                    $isRented = false;
-                    foreach ($activeRentals as $r) {
-                        $selected = $r['selectedSubUnits'] ?? null;
-                        if ($selected) {
-                            if (
-                                (isset($selected['roomType']) && $selected['roomType'] === ($subUnit['roomType'] ?? null)) ||
-                                (isset($selected['bedType']) && $selected['bedType'] === ($subUnit['bedType'] ?? null))
-                            ) {
-                                $isRented = true;
-                                break;
-                            }
-                        }
-                    }
-                    $subUnit['isAvailable'] = !$isRented;
-                }
-    
-                // 4. unitStatus
-                $capacity = $unit['unitOccupants'] ?? 0;
-                $unitStatus = ($currentOccupants >= $capacity) ? 'Occupied' : 'Available';
-    
-                // Apply update
-                $updateData = [
-                    'currentOccupants' => $currentOccupants,
-                    'rentedHistory' => $rentedHistory,
-                    'subUnits' => $subUnits,
-                    'unitStatus' => $unitStatus
-                ];
-                error_log("Updating unit {$unitNumber} with: " . json_encode($updateData));
-    
-                $this->unitCollection->updateOne(
-                    ['_id' => $unit['_id']],
-                    ['$set' => $updateData]
-                );
-            }
-            return true;
-        } catch (Exception $e) {
-            error_log('SyncRentalService error: ' . $e->getMessage());
-            throw $e;
-        }
-    }
-    
-    private function calculateAddonFees($planName, $parkingData = null, $shuttleData = null)
-    {
-        $parkingFee = 0.0;
-        $shuttleFee = 0.0;
-
-        // Parking fees based on plan
-        if (!empty($parkingData) && !empty($parkingData['hasParking'])) {
-            if ($planName === '10-month') {
-                $parkingFee = 500.0;
-            } elseif ($planName === '11-month') {
-                $parkingFee = 455.0;
-            } elseif ($planName === 'annual') {
-                $parkingFee = 5000.0;
-            } else {
-                $parkingFee = (float) ($parkingData['fee'] ?? 0.0);
-            }
-        }
-
-        // Shuttle fees based on plan
-        if (!empty($shuttleData) && !empty($shuttleData['hasShuttle'])) {
-            if ($planName === '10-month') {
-                $shuttleFee = 800.0;
-            } elseif ($planName === '11-month') {
-                $shuttleFee = 800.0;
-            } elseif ($planName === 'annual') {
-                $shuttleFee = 8000.0;
-            } else {
-                $shuttleFee = (float) ($shuttleData['fee'] ?? 0.0);
-            }
-        }
-
-        return [
-            'parkingFee' => $parkingFee,
-            'shuttleFee' => $shuttleFee
-        ];
-    }
-
-    private function formatRenewalHistory($history)
-    {
-        if (empty($history)) {
-            return [];
-        }
-        
-        $formatted = [];
-        foreach ($history as $entry) {
-            $formatted[] = [
-                'fromUnit' => isset($entry['fromUnit']) ? (string) $entry['fromUnit'] : null,
-                'fromUnitNumber' => $entry['fromUnitNumber'] ?? null,
-                'fromSubUnit' => [
-                    'roomType' => $entry['fromSubUnit']['roomType'] ?? null,
-                    'bedType' => $entry['fromSubUnit']['bedType'] ?? null,
-                ],
-                'fromYear' => $entry['fromYear'] ?? null,
-                'toUnit' => isset($entry['toUnit']) ? (string) $entry['toUnit'] : null,
-                'toUnitNumber' => $entry['toUnitNumber'] ?? null,
-                'toSubUnit' => [
-                    'roomType' => $entry['toSubUnit']['roomType'] ?? null,
-                    'bedType' => $entry['toSubUnit']['bedType'] ?? null,
-                ],
-                'toYear' => $entry['toYear'] ?? null,
-                'sameRoom' => $entry['sameRoom'] ?? null,
-                'changedAt' => $this->safeDateFormat($entry['changedAt'] ?? null),
-            ];
-        }
-        return $formatted;
+        return RentalChainUtils::formatRenewalHistory($history);
     }
 
     private function extractMatchedPrice($newSubUnit, $oldPriceName, $unitDoc)
     {
-        $priceOptions = $newSubUnit['price'] ?? [];
-        
-        // If price is directly a number or a simple array
-        if (is_numeric($priceOptions)) {
-            return [
-                'name' => $oldPriceName ?? 'default',
-                'price' => (float) $priceOptions
-            ];
-        }
-        
-        // If price is an array with a single price value
-        if (isset($priceOptions['price']) && is_numeric($priceOptions['price'])) {
-            return [
-                'name' => $oldPriceName ?? $priceOptions['name'] ?? 'default',
-                'price' => (float) $priceOptions['price']
-            ];
-        }
-        
-        // If price is an array of options (the normal case)
-        if (is_array($priceOptions)) {
-            // Try to find matching by name
-            foreach ($priceOptions as $option) {
-                $option = $option instanceof \MongoDB\Model\BSONDocument ? $option->getArrayCopy() : $option;
-                if ($oldPriceName && ($option['name'] ?? null) === $oldPriceName) {
-                    return $option;
-                }
-            }
-            
-            // No match, use first option
-            $firstOption = reset($priceOptions);
-            if ($firstOption) {
-                $firstOption = $firstOption instanceof \MongoDB\Model\BSONDocument 
-                    ? $firstOption->getArrayCopy() 
-                    : $firstOption;
-                return $firstOption;
-            }
-        }
-        
-        // Ultimate fallback
-        return [
-            'name' => $oldPriceName ?? 'default',
-            'price' => (float) ($unitDoc['unitPrice'] ?? 0.0)
-        ];
+        return RentalPriceUtils::extractMatchedPrice($newSubUnit, $oldPriceName, $unitDoc);
     }
+
+    private function calculateAddonFees($planName, $parkingData = null, $shuttleData = null): array
+    {
+        return RentalPriceUtils::calculateAddonFees($planName, $parkingData, $shuttleData);
+    }
+
+    private function safeDateFormat($dateValue): ?string
+    {
+        return DateUtils::safeFormat($dateValue);
+    }
+
+    // ─── HANDLERS ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
     public function reassignUnitService($reassignDetails) {
         try {
@@ -703,6 +472,125 @@ class RentalService
         }
     }
 
+    public function endRentalService($rentalId)
+    {
+        try {
+            $rental = $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
+            if (!$rental) {
+                throw new Exception('Rental not found');
+            }
+
+            $this->rentalCollection->updateOne(
+                ['_id' => new ObjectId($rentalId)],
+                ['$set' => ['status' => 'Ended']]
+            );
+
+            $subUnit = $rental['selectedSubUnits'] ?? null;
+
+            $unit = $this->unitCollection->findOne(['_id' => new ObjectId($rental['unit'])]);
+            if (!$unit) {
+                throw new Exception('Unit not found');
+            }
+
+            if ($subUnit) {
+                $this->getUnitService()->runUnitChecks(
+                    $this->unitCollection->findOne(['_id' => new ObjectId($rental['unit'])]),
+                    $subUnit,
+                    $rentalId,
+                    'free'
+                );
+            } else {
+                $this->getUnitService()->runUnitChecks(
+                    $this->unitCollection->findOne(['_id' => new ObjectId($rental['unit'])])
+                );
+            }
+
+            // 🆕 free EVERY unit in the renewal chain, not just the single renewedFromUnit field
+            $chainUnitIds = $this->getChainUnitIds($rental, $rental['unit']);
+            foreach ($chainUnitIds as $chainUnitId) {
+                $chainUnit = $this->unitCollection->findOne(['_id' => $chainUnitId]);
+                if (!$chainUnit || !$subUnit) continue;
+
+                $this->getUnitService()->runUnitChecks(
+                    $this->unitCollection->findOne(['_id' => $chainUnit['_id']]),
+                    $subUnit,
+                    $rentalId,
+                    'free'
+                );
+            }
+
+            return $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
+
+        } catch (Exception $e) {
+            error_log('Service error: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
+    public function earlyEndRentalService($rentalId)
+    {
+        try {
+            $rental = $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
+            if (!$rental) {
+                throw new Exception('Rental not found');
+            }
+
+            if ($rental['status'] !== 'Active') {
+                throw new Exception('Cannot end a rental if it was not approved');
+            }
+
+            $this->rentalCollection->updateOne(
+                ['_id' => new ObjectId($rentalId)],
+                [
+                    '$set' => [
+                        'status' => 'Ended',
+                        'earlyEndDate' => new UTCDateTime()
+                    ]
+                ]
+            );
+
+            $subUnit = $rental['selectedSubUnits'] ?? null;
+
+            $unit = $this->unitCollection->findOne(['_id' => new ObjectId($rental['unit'])]);
+            if (!$unit) {
+                throw new Exception('Unit not found');
+            }
+
+            if ($subUnit) {
+                $this->getUnitService()->runUnitChecks(
+                    $this->unitCollection->findOne(['_id' => new ObjectId($rental['unit'])]),
+                    $subUnit,
+                    $rentalId,
+                    'free'
+                );
+            } else {
+                $this->getUnitService()->runUnitChecks(
+                    $this->unitCollection->findOne(['_id' => new ObjectId($rental['unit'])])
+                );
+            }
+
+            // 🆕 same chain fix as endRentalService
+            $chainUnitIds = $this->getChainUnitIds($rental, $rental['unit']);
+            foreach ($chainUnitIds as $chainUnitId) {
+                $chainUnit = $this->unitCollection->findOne(['_id' => $chainUnitId]);
+                if (!$chainUnit || !$subUnit) continue;
+
+                $this->getUnitService()->runUnitChecks(
+                    $this->unitCollection->findOne(['_id' => $chainUnit['_id']]),
+                    $subUnit,
+                    $rentalId,
+                    'free'
+                );
+            }
+
+            return $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
+
+        } catch (Exception $e) {
+            error_log('Service error: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
     public function updateRentalService($rentalId, $rentalDetails)
     {
         try {
@@ -908,130 +796,9 @@ class RentalService
         }
     }
 
-    public function endRentalService($rentalId)
-    {
-        try {
-            $rental = $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
-            if (!$rental) {
-                throw new Exception('Rental not found');
-            }
-
-            $this->rentalCollection->updateOne(
-                ['_id' => new ObjectId($rentalId)],
-                ['$set' => ['status' => 'Ended']]
-            );
-
-            $subUnit = $rental['selectedSubUnits'] ?? null;
-
-            $unit = $this->unitCollection->findOne(['_id' => new ObjectId($rental['unit'])]);
-            if (!$unit) {
-                throw new Exception('Unit not found');
-            }
-
-            if ($subUnit) {
-                $this->getUnitService()->runUnitChecks(
-                    $this->unitCollection->findOne(['_id' => new ObjectId($rental['unit'])]),
-                    $subUnit,
-                    $rentalId,
-                    'free'
-                );
-            } else {
-                $this->getUnitService()->runUnitChecks(
-                    $this->unitCollection->findOne(['_id' => new ObjectId($rental['unit'])])
-                );
-            }
-
-            // 🆕 free EVERY unit in the renewal chain, not just the single renewedFromUnit field
-            $chainUnitIds = $this->getChainUnitIds($rental, $rental['unit']);
-            foreach ($chainUnitIds as $chainUnitId) {
-                $chainUnit = $this->unitCollection->findOne(['_id' => $chainUnitId]);
-                if (!$chainUnit || !$subUnit) continue;
-
-                $this->getUnitService()->runUnitChecks(
-                    $this->unitCollection->findOne(['_id' => $chainUnit['_id']]),
-                    $subUnit,
-                    $rentalId,
-                    'free'
-                );
-            }
-
-            return $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
-
-        } catch (Exception $e) {
-            error_log('Service error: ' . $e->getMessage());
-            throw $e;
-        }
-    }
-
-    public function earlyEndRentalService($rentalId)
-    {
-        try {
-            $rental = $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
-            if (!$rental) {
-                throw new Exception('Rental not found');
-            }
-
-            if ($rental['status'] !== 'Active') {
-                throw new Exception('Cannot end a rental if it was not approved');
-            }
-
-            $this->rentalCollection->updateOne(
-                ['_id' => new ObjectId($rentalId)],
-                [
-                    '$set' => [
-                        'status' => 'Ended',
-                        'earlyEndDate' => new UTCDateTime()
-                    ]
-                ]
-            );
-
-            $subUnit = $rental['selectedSubUnits'] ?? null;
-
-            $unit = $this->unitCollection->findOne(['_id' => new ObjectId($rental['unit'])]);
-            if (!$unit) {
-                throw new Exception('Unit not found');
-            }
-
-            if ($subUnit) {
-                $this->getUnitService()->runUnitChecks(
-                    $this->unitCollection->findOne(['_id' => new ObjectId($rental['unit'])]),
-                    $subUnit,
-                    $rentalId,
-                    'free'
-                );
-            } else {
-                $this->getUnitService()->runUnitChecks(
-                    $this->unitCollection->findOne(['_id' => new ObjectId($rental['unit'])])
-                );
-            }
-
-            // 🆕 same chain fix as endRentalService
-            $chainUnitIds = $this->getChainUnitIds($rental, $rental['unit']);
-            foreach ($chainUnitIds as $chainUnitId) {
-                $chainUnit = $this->unitCollection->findOne(['_id' => $chainUnitId]);
-                if (!$chainUnit || !$subUnit) continue;
-
-                $this->getUnitService()->runUnitChecks(
-                    $this->unitCollection->findOne(['_id' => $chainUnit['_id']]),
-                    $subUnit,
-                    $rentalId,
-                    'free'
-                );
-            }
-
-            return $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
-
-        } catch (Exception $e) {
-            error_log('Service error: ' . $e->getMessage());
-            throw $e;
-        }
-    }
-
     public function createRentalService(array $rentalDetails, array $signatureImage, ?array $guardianSignatureImage = null)
     {
         try {
-            error_log('unitYear debug — unit: ' . var_export($unit['unitYear'] ?? 'MISSING', true) . ', rentalDetails: ' . var_export($rentalDetails['unitYear'] ?? 'MISSING', true));
-
             $unit = $this->unitCollection->findOne(['_id' => new ObjectId($rentalDetails['unit'])]);
             $user = $this->userCollection->findOne(['_id' => new ObjectId($rentalDetails['user'])]);
             if (!$unit)
@@ -1201,7 +968,6 @@ class RentalService
             if ($unitYear === null && isset($rentalDetails['unitYear'])) {
                 $unitYear = (int) $rentalDetails['unitYear'];
             }
-            error_log('unitYear resolved to: ' . var_export($unitYear, true));
             $rental = new Rental(
                 rentalStartDate: $rentalDetails['rentalStartDate'] ?? null,
                 rentalEndDate: $rentalDetails['rentalEndDate'] ?? null,
@@ -1533,4 +1299,93 @@ class RentalService
             throw $e;
         }
     }
+
+    // public function syncRentalService(): bool
+    // {
+    //     try {
+    //         $units = $this->unitCollection->find();
+    //         foreach ($units as $unit) {
+    //             $unitId = (string) $unit['_id'];
+    //             $unitNumber = $unit['unitNumber'] ?? null;
+    //             error_log("---- Syncing unit {$unitNumber} ({$unitId}) ----");
+    
+    //             $rentals = $this->rentalCollection->find(['unit' => $unitId]);
+    //             $normalizedRentals = [];
+
+    //             foreach ($rentals as $doc) {
+    //                 $selected = $doc['selectedSubUnits'] ?? null;
+
+    //                 $unitTypeForRental = $selected['roomType'] 
+    //                     ?? $selected['bedType'] 
+    //                     ?? ($unit['unitType'] ?? null);
+
+    //                 $normalizedRentals[] = [
+    //                     '_id' => (string) $doc['_id'],
+    //                     'status' => $doc['status'] ?? null,
+    //                     'user' => (string) ($doc['user'] ?? ''), 
+    //                     'unitType' => $unitTypeForRental,
+    //                     'selectedSubUnits' => [
+    //                         'type' => $selected['type'] ?? null,
+    //                         'roomType' => $selected['roomType'] ?? null,
+    //                         'bedType' => $selected['bedType'] ?? null,
+    //                         'isAvailable' => $selected['isAvailable'] ?? true,
+    //                         'price' => $selected['price'] ?? null,
+    //                     ],
+    //                 ];
+    //             }
+    //             error_log("Found " . count($normalizedRentals) . " rentals for unit.");
+    
+    //             // Filter active rentals
+    //             $activeRentals = array_filter($normalizedRentals, fn($r) => $r['status'] === 'Active');
+    //             error_log("Active rentals count: " . count($activeRentals));
+    
+    //             // 1. currentOccupants
+    //             $currentOccupants = count($activeRentals);
+    
+    //             // 2. rentedHistory
+    //             $rentedHistory = array_map(fn($r) => $r['_id'], $activeRentals);
+    
+    //             // 3. subUnits availability
+    //             $subUnits = $unit['subUnits'] ?? [];
+    //             foreach ($subUnits as &$subUnit) {
+    //                 $isRented = false;
+    //                 foreach ($activeRentals as $r) {
+    //                     $selected = $r['selectedSubUnits'] ?? null;
+    //                     if ($selected) {
+    //                         if (
+    //                             (isset($selected['roomType']) && $selected['roomType'] === ($subUnit['roomType'] ?? null)) ||
+    //                             (isset($selected['bedType']) && $selected['bedType'] === ($subUnit['bedType'] ?? null))
+    //                         ) {
+    //                             $isRented = true;
+    //                             break;
+    //                         }
+    //                     }
+    //                 }
+    //                 $subUnit['isAvailable'] = !$isRented;
+    //             }
+    
+    //             // 4. unitStatus
+    //             $capacity = $unit['unitOccupants'] ?? 0;
+    //             $unitStatus = ($currentOccupants >= $capacity) ? 'Occupied' : 'Available';
+    
+    //             // Apply update
+    //             $updateData = [
+    //                 'currentOccupants' => $currentOccupants,
+    //                 'rentedHistory' => $rentedHistory,
+    //                 'subUnits' => $subUnits,
+    //                 'unitStatus' => $unitStatus
+    //             ];
+    //             error_log("Updating unit {$unitNumber} with: " . json_encode($updateData));
+    
+    //             $this->unitCollection->updateOne(
+    //                 ['_id' => $unit['_id']],
+    //                 ['$set' => $updateData]
+    //             );
+    //         }
+    //         return true;
+    //     } catch (Exception $e) {
+    //         error_log('SyncRentalService error: ' . $e->getMessage());
+    //         throw $e;
+    //     }
+    // }
 }

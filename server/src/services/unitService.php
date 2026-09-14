@@ -4,6 +4,7 @@ require_once __DIR__ . '/../../../vendor/autoload.php';
 // require_once __DIR__ . '/../utils/imageKit.php';
 require_once __DIR__ . '/../utils/LocalFileHelper.php';
 require_once __DIR__ . '/../../src/services/rentalService.php';
+require_once __DIR__ . '/../utils/DateUtils.php';
 
 use MongoDB\BSON\ObjectId;
 use MongoDB\BSON\UTCDateTime;
@@ -28,16 +29,10 @@ class UnitService
 
     protected function safeDateFormat($dateValue)
     {
-        if ($dateValue instanceof UTCDateTime) {
-            return $dateValue->toDateTime()->format('Y-m-d\TH:i:s.vP');
-        }
-        if (is_string($dateValue)) {
-            return $dateValue;
-        }
-        return null;
+        return DateUtils::safeFormat($dateValue);
     }
 
-    // Helpers
+    // ─── Delegated helpers ───
 
     // ============================================================
     // HELPER: Get sub-units as array
@@ -152,7 +147,6 @@ class UnitService
             );
         }
     }
-
 
     // ============================================================
     // PUBLIC WRAPPER
@@ -277,67 +271,6 @@ class UnitService
                 ['_id' => new ObjectId($unit['_id'])],
                 ['$set' => $updateData]
             );
-        }
-    }
-
-    protected function fixRentalDatesTo2026()
-    {
-        try {
-            $rentalsToFix = $this->rentalCollection->find([
-                '$or' => [
-                    ['rentalStartDate' => [
-                        '$gte' => new UTCDateTime(strtotime('2027-01-01') * 1000),
-                        '$lt' => new UTCDateTime(strtotime('2028-01-01') * 1000)
-                    ]],
-                    ['rentalEndDate' => [
-                        '$gte' => new UTCDateTime(strtotime('2027-01-01') * 1000),
-                        '$lt' => new UTCDateTime(strtotime('2028-01-01') * 1000)
-                    ]]
-                ]
-            ]);
-            $fixedCount = 0;
-            foreach ($rentalsToFix as $rental) {
-                try {
-                    $rentalId = (string) $rental['_id'];
-                    $updateData = [];
-
-                    // Fix start date: keep month/day, change year to 2026
-                    if (isset($rental['rentalStartDate'])) {
-                        $date = $rental['rentalStartDate']->toDateTime();
-                        $year = (int) $date->format('Y');
-                        if ($year === 2027) {
-                            $month = $date->format('m');
-                            $day = $date->format('d');
-                            $newDate = new DateTime("2026-{$month}-{$day}");
-                            $updateData['rentalStartDate'] = new UTCDateTime($newDate->getTimestamp() * 1000);
-                        }
-                    }
-                    // Fix end date: keep month/day, change year to 2026
-                    if (isset($rental['rentalEndDate'])) {
-                        $date = $rental['rentalEndDate']->toDateTime();
-                        $year = (int) $date->format('Y');
-                        if ($year === 2027) {
-                            $month = $date->format('m');
-                            $day = $date->format('d');
-                            $newDate = new DateTime("2026-{$month}-{$day}");
-                            $updateData['rentalEndDate'] = new UTCDateTime($newDate->getTimestamp() * 1000);
-                        }
-                    }
-                    if (!empty($updateData)) {
-                        $this->rentalCollection->updateOne(
-                            ['_id' => $rental['_id']],
-                            ['$set' => $updateData]
-                        );
-                        $fixedCount++;
-                        error_log("Fixed rental {$rentalId} dates to 2026");
-                    }
-                } catch (Exception $e) {
-                    error_log("Failed to fix rental {$rentalId}: " . $e->getMessage());
-                }
-            }
-            error_log("Fixed {$fixedCount} rentals to 2026");
-        } catch (Exception $e) {
-            error_log("Error in fixRentalDatesTo2026: " . $e->getMessage());
         }
     }
 
@@ -851,4 +784,65 @@ class UnitService
             throw $e;
         }
     }
+
+    // protected function fixRentalDatesTo2026()
+    // {
+    //     try {
+    //         $rentalsToFix = $this->rentalCollection->find([
+    //             '$or' => [
+    //                 ['rentalStartDate' => [
+    //                     '$gte' => new UTCDateTime(strtotime('2027-01-01') * 1000),
+    //                     '$lt' => new UTCDateTime(strtotime('2028-01-01') * 1000)
+    //                 ]],
+    //                 ['rentalEndDate' => [
+    //                     '$gte' => new UTCDateTime(strtotime('2027-01-01') * 1000),
+    //                     '$lt' => new UTCDateTime(strtotime('2028-01-01') * 1000)
+    //                 ]]
+    //             ]
+    //         ]);
+    //         $fixedCount = 0;
+    //         foreach ($rentalsToFix as $rental) {
+    //             try {
+    //                 $rentalId = (string) $rental['_id'];
+    //                 $updateData = [];
+
+    //                 // Fix start date: keep month/day, change year to 2026
+    //                 if (isset($rental['rentalStartDate'])) {
+    //                     $date = $rental['rentalStartDate']->toDateTime();
+    //                     $year = (int) $date->format('Y');
+    //                     if ($year === 2027) {
+    //                         $month = $date->format('m');
+    //                         $day = $date->format('d');
+    //                         $newDate = new DateTime("2026-{$month}-{$day}");
+    //                         $updateData['rentalStartDate'] = new UTCDateTime($newDate->getTimestamp() * 1000);
+    //                     }
+    //                 }
+    //                 // Fix end date: keep month/day, change year to 2026
+    //                 if (isset($rental['rentalEndDate'])) {
+    //                     $date = $rental['rentalEndDate']->toDateTime();
+    //                     $year = (int) $date->format('Y');
+    //                     if ($year === 2027) {
+    //                         $month = $date->format('m');
+    //                         $day = $date->format('d');
+    //                         $newDate = new DateTime("2026-{$month}-{$day}");
+    //                         $updateData['rentalEndDate'] = new UTCDateTime($newDate->getTimestamp() * 1000);
+    //                     }
+    //                 }
+    //                 if (!empty($updateData)) {
+    //                     $this->rentalCollection->updateOne(
+    //                         ['_id' => $rental['_id']],
+    //                         ['$set' => $updateData]
+    //                     );
+    //                     $fixedCount++;
+    //                     error_log("Fixed rental {$rentalId} dates to 2026");
+    //                 }
+    //             } catch (Exception $e) {
+    //                 error_log("Failed to fix rental {$rentalId}: " . $e->getMessage());
+    //             }
+    //         }
+    //         error_log("Fixed {$fixedCount} rentals to 2026");
+    //     } catch (Exception $e) {
+    //         error_log("Error in fixRentalDatesTo2026: " . $e->getMessage());
+    //     }
+    // }
 }
