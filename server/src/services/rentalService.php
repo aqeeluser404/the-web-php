@@ -61,15 +61,36 @@ class RentalService
         $ids = [];
 
         if (!empty($rental['renewalHistory'])) {
-            foreach ($rental['renewalHistory'] as $entry) {
-                if (isset($entry['fromUnit']) && (string) $entry['fromUnit'] !== (string) $currentUnitId) {
-                    $ids[(string) $entry['fromUnit']] = $entry['fromUnit']; // dedupe by string key
+            // ✅ Find the LAST room change break (scanning backwards)
+            // This ensures we only keep units in the CURRENT active chain
+            $breakIndex = -1;
+            for ($i = count($rental['renewalHistory']) - 1; $i >= 0; $i--) {
+                $entry = $rental['renewalHistory'][$i];
+                if (isset($entry['sameRoom']) && $entry['sameRoom'] === false) {
+                    $breakIndex = $i;
+                    break;
+                }
+            }
+
+            // ✅ Only include units from the ACTIVE chain (after the break)
+            foreach ($rental['renewalHistory'] as $index => $entry) {
+                // Skip entries before or at the break
+                if ($breakIndex !== -1 && $index <= $breakIndex) {
+                    continue;
+                }
+
+                // Include the "fromUnit" from active chain entries
+                if (isset($entry['fromUnit']) && 
+                    (string) $entry['fromUnit'] !== (string) $currentUnitId) {
+                    $ids[(string) $entry['fromUnit']] = $entry['fromUnit'];
                 }
             }
         }
 
-        // fallback for rentals extended before renewalHistory existed
-        if (empty($ids) && !empty($rental['renewedFromUnit']) && (string) $rental['renewedFromUnit'] !== (string) $currentUnitId) {
+        // Fallback for rentals extended before renewalHistory existed
+        // Only use this if no history was found AND renewedFromUnit exists
+        if (empty($ids) && !empty($rental['renewedFromUnit']) && 
+            (string) $rental['renewedFromUnit'] !== (string) $currentUnitId) {
             $ids[(string) $rental['renewedFromUnit']] = $rental['renewedFromUnit'];
         }
 
@@ -531,10 +552,11 @@ class RentalService
                     'free'
                 );
 
-                // If a chain root exists further back and differs from the immediate old
-                // unit, free that too — the whole chain is broken by the room change.
-                if (!empty($rental['renewedFromUnit']) && (string) $rental['renewedFromUnit'] !== (string) $oldUnit['_id']) {
-                    $priorUnit = $this->unitCollection->findOne(['_id' => $rental['renewedFromUnit']]);
+                // 🆕 free EVERY unit in the renewal chain, not just the single renewedFromUnit field —
+                // otherwise middle links (e.g. 2027, when the chain root is 2026) never get freed.
+                $chainUnitIds = $this->getChainUnitIds($rental, $oldUnit['_id']);
+                foreach ($chainUnitIds as $chainUnitId) {
+                    $priorUnit = $this->unitCollection->findOne(['_id' => $chainUnitId]);
                     if ($priorUnit) {
                         $this->getUnitService()->runUnitChecks($priorUnit, $subUnitFilter, $rental['_id'], 'free');
                     }
@@ -730,6 +752,54 @@ class RentalService
                     throw new Exception('Unit is already at full capacity');
                 }
 
+                // ✅ NEW: Check if any chain unit's room is already occupied by someone else
+                $chainUnitIds = $this->getChainUnitIds($rentalToUpdate, $unitToUpdate['_id']);
+                $blockedUnits = [];
+
+                foreach ($chainUnitIds as $chainUnitId) {
+                    $chainUnit = $this->unitCollection->findOne(['_id' => new ObjectId($chainUnitId)]);
+                    if (!$chainUnit || !$subUnit) continue;
+
+                    // Find the matching sub-unit index
+                    $subUnitsArray = $this->getUnitService()->getSubUnitsArray($chainUnit);
+                    $roomIndex = $this->getUnitService()->findSubUnitIndex($subUnitsArray, $subUnit);
+
+                    if ($roomIndex === null) {
+                        $blockedUnits[] = "{$chainUnit['unitNumber']} ({$chainUnit['unitYear']}) — room not found";
+                        continue;
+                    }
+
+                    $isAvailable = filter_var(
+                        $subUnitsArray[$roomIndex]['isAvailable'] ?? true,
+                        FILTER_VALIDATE_BOOLEAN,
+                        FILTER_NULL_ON_FAILURE
+                    );
+
+                    if ($isAvailable === false) {
+                        // Check if it's occupied by someone else (not this rental)
+                        $occupyingRental = $this->rentalCollection->findOne([
+                            'unit' => new ObjectId($chainUnitId),
+                            'selectedSubUnits.bedType' => $subUnit['bedType'] ?? null,
+                            'selectedSubUnits.roomType' => $subUnit['roomType'] ?? null,
+                            'status' => 'Active',
+                            '_id' => ['$ne' => new ObjectId($rentalId)]
+                        ]);
+
+                        if ($occupyingRental) {
+                            $blockedUnits[] = "{$chainUnit['unitNumber']} ({$chainUnit['unitYear']})";
+                        }
+                    }
+                }
+
+                if (!empty($blockedUnits)) {
+                    throw new Exception(
+                        "Cannot re-approve: The following chained units are now occupied by other tenants: " . 
+                        implode(', ', $blockedUnits) . 
+                        ". The renewal chain is broken. Please reassign the tenant to a different unit or break the chain manually."
+                    );
+                }
+
+                // ✅ All chain units are available — proceed with locking
                 if ($subUnit) {
                     $this->getUnitService()->runUnitChecks(
                         $this->unitCollection->findOne(['_id' => $unitToUpdate['_id']]),
@@ -750,10 +820,9 @@ class RentalService
                     }
                 }
 
-                // 🆕 walk EVERY unit in the renewal chain, not just the single renewedFromUnit field
-                $chainUnitIds = $this->getChainUnitIds($rentalToUpdate, $unitToUpdate['_id']);
+                // Lock all chain units (only runs if validation passed)
                 foreach ($chainUnitIds as $chainUnitId) {
-                    $chainUnit = $this->unitCollection->findOne(['_id' => $chainUnitId]);
+                    $chainUnit = $this->unitCollection->findOne(['_id' => new ObjectId($chainUnitId)]);
                     if (!$chainUnit || !$subUnit) continue;
 
                     $this->getUnitService()->runUnitChecks(
