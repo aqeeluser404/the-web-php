@@ -58,9 +58,9 @@ class UnitController {
             if (empty($unitId)) {
                 throw new Exception('Unit ID is required');
             }
-            if (empty($userId)) {
-                throw new Exception('User ID is required');
-            }
+            // if (empty($userId)) {
+            //     throw new Exception('User ID is required');
+            // }
 
             $result = $this->unitService->cancelReservationService($unitId, $userId);
             
@@ -120,9 +120,9 @@ public function cancelReserveRoomController($req, $res) {
         if ($roomIndex === null) {
             throw new Exception('Room index is required');
         }
-        if (empty($userId)) {
-            throw new Exception('User ID is required');
-        }
+        // if (empty($userId)) {
+        //     throw new Exception('User ID is required');
+        // }
 
         $result = $this->unitService->cancelReserveRoomService($unitId, $roomIndex, $userId);
 

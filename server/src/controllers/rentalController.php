@@ -67,6 +67,32 @@ class RentalController {
         }
     }
 
+    public function revertLastExtensionController($req, $res) {
+        try {
+            $rentalId = $req->getAttribute('id');
+
+            if (!$rentalId) {
+                throw new Exception('Rental ID is required');
+            }
+
+            // Call the service
+            $updatedRental = $this->rentalService->revertLastExtension($rentalId);
+
+            // Optional: audit log
+            error_log(sprintf(
+                'Revert extension: rental %s reverted to unit %s (year %s)',
+                $rentalId,
+                $updatedRental['unit'] ?? '?',
+                $updatedRental['unitYear'] ?? '?'
+            ));
+
+            return $this->respond($res, $updatedRental, 200);
+        } catch (Exception $e) {
+            error_log('Revert last extension controller error: ' . $e->getMessage());
+            return $this->respond($res, ['error' => $e->getMessage()], 400);
+        }
+    }
+
     public function createRentalController($req, $res) {
         try {
             $rentalDetails = $req->getParsedBody();

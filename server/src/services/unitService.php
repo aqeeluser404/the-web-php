@@ -695,9 +695,9 @@ class UnitService
             if (!isset($unit['reservedBy'])) {
                 throw new Exception('Unit is not reserved');
             }
-            if ((string) $unit['reservedBy'] !== $requestingUserId) {
-                throw new Exception('Only the reserving user can cancel this reservation');
-            }
+            // if ((string) $unit['reservedBy'] !== $requestingUserId) {
+            //     throw new Exception('Only the reserving user can cancel this reservation');
+            // }
             $this->unitCollection->updateOne(
                 ['_id' => new ObjectId($unitId)],
                 [
@@ -724,10 +724,10 @@ class UnitService
             if (empty($unit['subUnits']) || !isset($unit['subUnits'][$roomIndex])) {
                 throw new Exception('Room not found in unit');
             }
-            $room = $unit['subUnits'][$roomIndex];
-            if (isset($room['reservedBy'])) {
-                throw new Exception('Room is already reserved');
-            }
+            // $room = $unit['subUnits'][$roomIndex];
+            // if (isset($room['reservedBy'])) {
+            //     throw new Exception('Room is already reserved');
+            // }
 
             // Build the update path for nested reservedBy and reservedAt
             $reservedByField = 'subUnits.' . $roomIndex . '.reservedBy';
@@ -764,9 +764,9 @@ class UnitService
                 throw new Exception('Room is not reserved');
             }
             // Check whether the requesting user is the one who reserved the room
-            if ((string) $room['reservedBy'] !== $requestingUserId) {
-                throw new Exception('Only the reserving user can cancel this reservation');
-            }
+            // if ((string) $room['reservedBy'] !== $requestingUserId) {
+            //     throw new Exception('Only the reserving user can cancel this reservation');
+            // }
 
             $reservedByField = 'subUnits.' . $roomIndex . '.reservedBy';
             $reservedAtField = 'subUnits.' . $roomIndex . '.reservedAt';

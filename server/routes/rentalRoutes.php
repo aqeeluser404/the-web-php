@@ -13,6 +13,9 @@ return function (App $app) {
     $app->put('/api/rentals/{id}/extend-to-new-year', [RentalController::class, 'extendRentalToNewYearController'])
     ->add(new AuthenticationMiddleware());
 
+    $app->put('/api/rentals/{id}/revert-extension', [RentalController::class, 'revertLastExtensionController'])
+    ->add(new AuthenticationMiddleware());
+
     $app->post('/api/rentals', [RentalController::class, 'createRentalController']) // POST CREATE->RENTAL
     ->add(new AuthenticationMiddleware());
     

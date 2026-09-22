@@ -407,6 +407,354 @@ class RentalService
         }
     }
 
+    /**
+     * Reverts the most recent extension recorded in renewalHistory — moves the
+     * rental back to whatever unit/room/year it was in before that extension,
+     * restoring the correct lock chain based on the sameRoom trail.
+     */
+    // public function revertLastExtension($rentalId)
+    // {
+    //     try {
+    //         $rental = $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
+    //         if (!$rental) {
+    //             throw new Exception('Rental not found');
+    //         }
+
+    //         $history = $rental['renewalHistory'] ?? [];
+    //         $history = $history instanceof \MongoDB\Model\BSONArray ? $history->getArrayCopy() : (array) $history;
+
+    //         if (empty($history)) {
+    //             throw new Exception('This rental has no renewal history to revert');
+    //         }
+
+    //         $lastEntry = end($history);
+    //         $lastEntry = $lastEntry instanceof \MongoDB\Model\BSONDocument ? $lastEntry->getArrayCopy() : $lastEntry;
+
+    //         // Sanity check — make sure nothing else has moved this rental since the
+    //         // last extension (e.g. a manual reassignment), or reverting would be unsafe.
+    //         if ((string) $lastEntry['toUnit'] !== (string) $rental['unit']) {
+    //             throw new Exception('Rental no longer matches its last recorded extension — cannot safely auto-revert. Please adjust manually.');
+    //         }
+
+    //         $fromUnit = $this->unitCollection->findOne(['_id' => $lastEntry['fromUnit']]);
+    //         if (!$fromUnit) {
+    //             throw new Exception('The original unit from this extension no longer exists');
+    //         }
+
+    //         $fromSubUnitFilter = $lastEntry['fromSubUnit'];
+    //         $fromYear = (int) $lastEntry['fromYear'];
+
+    //         $fromSubUnits = $this->getUnitService()->getSubUnitsArray($fromUnit);
+    //         $fromRoomIndex = $this->getUnitService()->findSubUnitIndex($fromSubUnits, $fromSubUnitFilter);
+    //         if ($fromRoomIndex === null) {
+    //             throw new Exception('The original room from this extension no longer exists on that unit');
+    //         }
+    //         $fromSubUnit = $fromSubUnits[$fromRoomIndex] instanceof \MongoDB\Model\BSONDocument
+    //             ? $fromSubUnits[$fromRoomIndex]->getArrayCopy()
+    //             : $fromSubUnits[$fromRoomIndex];
+
+    //         // Safety: make sure no OTHER active rental has taken this room since
+    //         $conflicting = $this->rentalCollection->findOne([
+    //             '_id' => ['$ne' => new ObjectId($rentalId)],
+    //             'unit' => $fromUnit['_id'],
+    //             'status' => 'Active',
+    //             'unitYear' => $fromYear,
+    //             '$or' => [
+    //                 ['selectedSubUnits.bedType' => $fromSubUnitFilter['bedType'] ?? null],
+    //                 ['selectedSubUnits.roomType' => $fromSubUnitFilter['roomType'] ?? null],
+    //             ]
+    //         ]);
+    //         if ($conflicting) {
+    //             throw new Exception('Cannot revert — that room is now occupied by a different active rental');
+    //         }
+
+    //         $oldPriceName = $rental['selectedSubUnits']['price']['name'] ?? null;
+    //         $matchedPrice = $this->extractMatchedPrice($fromSubUnit, $oldPriceName, $fromUnit);
+    //         if (!$matchedPrice) {
+    //             throw new Exception('Could not determine a valid price plan for the reverted unit');
+    //         }
+
+    //         $basePrice = (float) ($matchedPrice['price'] ?? 0.0);
+    //         $planName = $matchedPrice['name'] ?? null;
+
+    //         $parkingData = $rental['parking'] ?? [];
+    //         $shuttleData = $rental['shuttle'] ?? [];
+    //         $fees = $this->calculateAddonFees($planName, $parkingData, $shuttleData);
+    //         $totalRentalPrice = (float) $basePrice + (float) $fees['parkingFee'] + (float) $fees['shuttleFee'];
+
+    //         // Free the unit we're reverting AWAY from
+    //         $this->getUnitService()->runUnitChecks(
+    //             $this->unitCollection->findOne(['_id' => $rental['unit']]),
+    //             $rental['selectedSubUnits'],
+    //             $rentalId,
+    //             'free'
+    //         );
+
+    //         // Walk backward through what history remains (excluding the entry being
+    //         // undone) to find the full same-room chain ending at $fromUnit — this
+    //         // mirrors exactly how the chain was built going forward.
+    //         $remainingHistory = array_slice($history, 0, count($history) - 1);
+    //         $chainUnitIds = [(string) $fromUnit['_id'] => $fromUnit['_id']];
+    //         $cursorUnitId = (string) $fromUnit['_id'];
+
+    //         for ($i = count($remainingHistory) - 1; $i >= 0; $i--) {
+    //             $entry = $remainingHistory[$i];
+    //             $entry = $entry instanceof \MongoDB\Model\BSONDocument ? $entry->getArrayCopy() : $entry;
+
+    //             if ((string) $entry['toUnit'] !== $cursorUnitId) break;
+    //             if (!($entry['sameRoom'] ?? false)) break; // room changed here — chain stops
+
+    //             $chainUnitIds[(string) $entry['fromUnit']] = $entry['fromUnit'];
+    //             $cursorUnitId = (string) $entry['fromUnit'];
+    //         }
+
+    //         // Lock the restored unit + everything still chained to it
+    //         foreach ($chainUnitIds as $chainUnitId) {
+    //             $chainUnit = $this->unitCollection->findOne(['_id' => $chainUnitId]);
+    //             if (!$chainUnit) continue;
+
+    //             $this->getUnitService()->runUnitChecks(
+    //                 $this->unitCollection->findOne(['_id' => $chainUnit['_id']]),
+    //                 $fromSubUnitFilter,
+    //                 $rentalId,
+    //                 'lock'
+    //             );
+    //         }
+
+    //         // If more than just $fromUnit itself is chained, renewedFromUnit points
+    //         // at the chain root; otherwise this rental has no live prior link anymore.
+    //         $chainList = array_values($chainUnitIds);
+    //         $restoredRenewedFromUnit = count($chainList) > 1 ? end($chainList) : null;
+
+    //         $newSelectedSubUnit = [
+    //             'type' => $fromSubUnit['type'] ?? null,
+    //             'roomType' => $fromSubUnit['roomType'] ?? null,
+    //             'bedType' => $fromSubUnit['bedType'] ?? null,
+    //             'price' => [
+    //                 'name' => $matchedPrice['name'] ?? 'default',
+    //                 'price' => (float) ($matchedPrice['price'] ?? 0)
+    //             ],
+    //             'isAvailable' => true
+    //         ];
+
+    //         $update = [
+    //             'unit' => $fromUnit['_id'],
+    //             'unitType' => $fromSubUnitFilter['bedType'] ?? $fromSubUnitFilter['roomType'] ?? $rental['unitType'],
+    //             'selectedSubUnits' => $newSelectedSubUnit,
+    //             'rentalPrice' => (float) $totalRentalPrice,
+    //             'rentalEndDate' => new UTCDateTime(strtotime("{$fromYear}-12-15") * 1000),
+    //             'unitYear' => $fromYear,
+    //             'renewed' => !empty($remainingHistory),
+    //             'renewedFromUnit' => $restoredRenewedFromUnit,
+    //             'renewedToUnit' => null
+    //         ];
+
+    //         if (!empty($parkingData)) {
+    //             $update['parking'] = [
+    //                 'hasParking' => (bool) ($parkingData['hasParking'] ?? false),
+    //                 'fee' => (float) $fees['parkingFee']
+    //             ];
+    //         }
+    //         if (!empty($shuttleData)) {
+    //             $update['shuttle'] = [
+    //                 'hasShuttle' => (bool) ($shuttleData['hasShuttle'] ?? false),
+    //                 'fee' => (float) $fees['shuttleFee']
+    //             ];
+    //         }
+
+    //         $this->rentalCollection->updateOne(
+    //             ['_id' => new ObjectId($rentalId)],
+    //             [
+    //                 '$set' => $update,
+    //                 '$pop' => ['renewalHistory' => 1] // removes the last array element cleanly
+    //             ]
+    //         );
+
+    //         return $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
+
+    //     } catch (Exception $e) {
+    //         error_log('Revert last extension error: ' . $e->getMessage());
+    //         throw $e;
+    //     }
+    // }
+
+    /**
+     * Reverts the most recent extension recorded in renewalHistory.
+     */
+    public function revertLastExtension($rentalId)
+    {
+        try {
+            $rental = $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
+            if (!$rental) {
+                throw new Exception('Rental not found');
+            }
+
+            // Normalize history to a plain array
+            $history = $rental['renewalHistory'] ?? [];
+            $history = $history instanceof \MongoDB\Model\BSONArray
+                ? $history->getArrayCopy()
+                : (array) $history;
+
+            if (empty($history)) {
+                throw new Exception('This rental has no renewal history to revert');
+            }
+
+            // Grab the last entry — the one we're undoing
+            $lastEntry = end($history);
+            $lastEntry = $lastEntry instanceof \MongoDB\Model\BSONDocument
+                ? $lastEntry->getArrayCopy()
+                : $lastEntry;
+
+            // Sanity: rental must still point at the "to" side of the last extension
+            if ((string) $lastEntry['toUnit'] !== (string) $rental['unit']) {
+                throw new Exception('Rental no longer matches its last recorded extension — cannot safely auto-revert. Please adjust manually.');
+            }
+
+            // Look up the "from" side
+            $fromUnit = $this->unitCollection->findOne(['_id' => new ObjectId((string) $lastEntry['fromUnit'])]);
+            if (!$fromUnit) {
+                throw new Exception('The original unit from this extension no longer exists');
+            }
+
+            $fromSubUnitFilter = $lastEntry['fromSubUnit'];
+            $fromYear = (int) $lastEntry['fromYear'];
+
+            $fromSubUnits = $this->getUnitService()->getSubUnitsArray($fromUnit);
+            $fromRoomIndex = $this->getUnitService()->findSubUnitIndex($fromSubUnits, $fromSubUnitFilter);
+            if ($fromRoomIndex === null) {
+                throw new Exception('The original room from this extension no longer exists on that unit');
+            }
+
+            $fromSubUnit = $fromSubUnits[$fromRoomIndex] instanceof \MongoDB\Model\BSONDocument
+                ? $fromSubUnits[$fromRoomIndex]->getArrayCopy()
+                : $fromSubUnits[$fromRoomIndex];
+
+            // Safety: ensure no other active rental has claimed that room
+            $conflicting = $this->rentalCollection->findOne([
+                '_id' => ['$ne' => new ObjectId($rentalId)],
+                'unit' => $fromUnit['_id'],
+                'status' => 'Active',
+                'unitYear' => $fromYear,
+                '$or' => [
+                    ['selectedSubUnits.bedType' => $fromSubUnitFilter['bedType'] ?? null],
+                    ['selectedSubUnits.roomType' => $fromSubUnitFilter['roomType'] ?? null],
+                ]
+            ]);
+            if ($conflicting) {
+                throw new Exception('Cannot revert — that room is now occupied by a different active rental');
+            }
+
+            // ✅ Use helper for price matching
+            $oldPriceName = $rental['selectedSubUnits']['price']['name'] ?? null;
+            $matchedPrice = $this->extractMatchedPrice($fromSubUnit, $oldPriceName, $fromUnit);
+            if (!$matchedPrice) {
+                throw new Exception('Could not determine a valid price plan for the reverted unit');
+            }
+
+            $planName = $matchedPrice['name'] ?? null;
+            $basePrice = (float) ($matchedPrice['price'] ?? 0.0);
+
+            // ✅ Use helper for addon fees
+            $parkingData = $rental['parking'] ?? [];
+            $shuttleData = $rental['shuttle'] ?? [];
+            $fees = $this->calculateAddonFees($planName, $parkingData, $shuttleData);
+            $totalRentalPrice = $basePrice + $fees['parkingFee'] + $fees['shuttleFee'];
+
+            // Free the unit we're reverting AWAY from
+            $this->getUnitService()->runUnitChecks(
+                $this->unitCollection->findOne(['_id' => $rental['unit']]),
+                $rental['selectedSubUnits'],
+                $rentalId,
+                'free'
+            );
+
+            // Build the "remaining history" and let getChainUnitIds work its magic
+            // by pretending the rental ends at $fromUnit with the remaining history.
+            $remainingHistory = array_slice($history, 0, count($history) - 1);
+
+            $pseudoRental = [
+                'renewalHistory' => $remainingHistory,
+                'renewedFromUnit' => null,
+                'unit' => $fromUnit['_id'],
+            ];
+
+            // ✅ Use helper — it walks backwards and stops at the last room-change break
+            $chainUnitIds = $this->getChainUnitIds($pseudoRental, $fromUnit['_id']);
+
+            // Always include the fromUnit itself
+            array_unshift($chainUnitIds, $fromUnit['_id']);
+
+            // Lock the restored unit + everything still chained to it
+            foreach ($chainUnitIds as $chainUnitId) {
+                $chainUnit = $this->unitCollection->findOne(['_id' => new ObjectId((string) $chainUnitId)]);
+                if (!$chainUnit) continue;
+
+                $this->getUnitService()->runUnitChecks(
+                    $chainUnit,
+                    $fromSubUnitFilter,
+                    $rentalId,
+                    'lock'
+                );
+            }
+
+            // If more than one unit is chained, renewedFromUnit points at the chain root
+            $restoredRenewedFromUnit = count($chainUnitIds) > 1
+                ? $chainUnitIds[count($chainUnitIds) - 1]
+                : null;
+
+            // Build the new selected sub-unit shape
+            $newSelectedSubUnit = [
+                'type' => $fromSubUnit['type'] ?? null,
+                'roomType' => $fromSubUnit['roomType'] ?? null,
+                'bedType' => $fromSubUnit['bedType'] ?? null,
+                'price' => [
+                    'name' => $matchedPrice['name'] ?? 'default',
+                    'price' => (float) ($matchedPrice['price'] ?? 0)
+                ],
+                'isAvailable' => true
+            ];
+
+            $update = [
+                'unit' => $fromUnit['_id'],
+                'unitType' => $fromSubUnitFilter['bedType'] ?? $fromSubUnitFilter['roomType'] ?? $rental['unitType'],
+                'selectedSubUnits' => $newSelectedSubUnit,
+                'rentalPrice' => (float) $totalRentalPrice,
+                'rentalEndDate' => new UTCDateTime(strtotime("{$fromYear}-12-15") * 1000),
+                'unitYear' => $fromYear,
+                'renewed' => !empty($remainingHistory),
+                'renewedFromUnit' => $restoredRenewedFromUnit,
+                'renewedToUnit' => null
+            ];
+
+            if (!empty($parkingData)) {
+                $update['parking'] = [
+                    'hasParking' => (bool) ($parkingData['hasParking'] ?? false),
+                    'fee' => (float) $fees['parkingFee']
+                ];
+            }
+            if (!empty($shuttleData)) {
+                $update['shuttle'] = [
+                    'hasShuttle' => (bool) ($shuttleData['hasShuttle'] ?? false),
+                    'fee' => (float) $fees['shuttleFee']
+                ];
+            }
+
+            $this->rentalCollection->updateOne(
+                ['_id' => new ObjectId($rentalId)],
+                [
+                    '$set' => $update,
+                    '$pop' => ['renewalHistory' => 1]
+                ]
+            );
+
+            return $this->rentalCollection->findOne(['_id' => new ObjectId($rentalId)]);
+
+        } catch (Exception $e) {
+            error_log('Revert last extension error: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+
     // ─── HANDLERS ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
     public function deleteRentalService(string $rentalId): bool
