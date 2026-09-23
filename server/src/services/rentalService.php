@@ -629,17 +629,29 @@ class RentalService
                 ? $fromSubUnits[$fromRoomIndex]->getArrayCopy()
                 : $fromSubUnits[$fromRoomIndex];
 
-            // Safety: ensure no other active rental has claimed that room
-            $conflicting = $this->rentalCollection->findOne([
-                '_id' => ['$ne' => new ObjectId($rentalId)],
-                'unit' => $fromUnit['_id'],
-                'status' => 'Active',
-                'unitYear' => $fromYear,
-                '$or' => [
-                    ['selectedSubUnits.bedType' => $fromSubUnitFilter['bedType'] ?? null],
-                    ['selectedSubUnits.roomType' => $fromSubUnitFilter['roomType'] ?? null],
-                ]
-            ]);
+            $fromSubUnit = $fromSubUnits[$fromRoomIndex] instanceof \MongoDB\Model\BSONDocument
+                ? $fromSubUnits[$fromRoomIndex]->getArrayCopy()
+                : $fromSubUnits[$fromRoomIndex];
+
+            $roomMatch = [];
+            if (!empty($fromSubUnitFilter['bedType'])) {
+                $roomMatch['selectedSubUnits.bedType'] = $fromSubUnitFilter['bedType'];
+            } elseif (!empty($fromSubUnitFilter['roomType'])) {
+                $roomMatch['selectedSubUnits.roomType'] = $fromSubUnitFilter['roomType'];
+            }
+
+            $conflicting = $this->rentalCollection->findOne(array_merge(
+                [
+                    '_id' => ['$ne' => new ObjectId($rentalId)],
+                    'unit' => $fromUnit['_id'],
+                    'status' => 'Active',
+                    'unitYear' => $fromYear,
+                ],
+                $roomMatch
+            ));
+            if ($conflicting) {
+                throw new Exception('Cannot revert — that room is now occupied by a different active rental');
+            }
             if ($conflicting) {
                 throw new Exception('Cannot revert — that room is now occupied by a different active rental');
             }
