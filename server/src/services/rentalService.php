@@ -102,9 +102,9 @@ class RentalService
                 throw new Exception('New subunit details missing');
             }
 
-            $unitTypeForRental = $newSubUnit['roomType'] 
-                ?? $newSubUnit['bedType'] 
-                ?? $unitDoc['unitType'];
+            // $unitTypeForRental = $newSubUnit['roomType'] 
+            //     ?? $newSubUnit['bedType'] 
+            //     ?? $unitDoc['unitType'];
 
             // ============================================================
             // RECALCULATE TOTAL PRICE
@@ -127,22 +127,43 @@ class RentalService
             // 3. Calculate total rental price
             $totalRentalPrice = (float) $basePrice + (float) $parkingFee + (float) $shuttleFee;
 
-            // ============================================================
-            // BUILD UPDATE DATA
-            // ============================================================
-            $updateData = [
-                'unit' => $unitDoc['_id'],
-                'unitType' => $unitTypeForRental,
-                'selectedSubUnits' => [
-                    'type' => $newSubUnit['type'] ?? null,
-                    'roomType' => $newSubUnit['roomType'] ?? null,
-                    'bedType' => $newSubUnit['bedType'] ?? null,
-                    'price' => $matchedPrice ?: $newSubUnit['price'],
-                    'isAvailable' => true
-                ],
-                'rentalPrice' => (float) $totalRentalPrice,
-                'unitYear' => (int) ($unitDoc['unitYear'] ?? date('Y')) 
-            ];
+// ============================================================
+// Determine which identifier field applies based on type
+// Only ONE of roomType / bedType should survive on the rental.
+// ============================================================
+$newType = $newSubUnit['type'] ?? null;
+
+$newRoomType = $newType === 'room'
+    ? ($newSubUnit['roomType'] ?? null)
+    : null;
+
+$newBedType = $newType === 'bed'
+    ? ($newSubUnit['bedType'] ?? null)
+    : null;
+
+// Fallback for legacy sub-units with no explicit type
+if ($newType !== 'room' && $newType !== 'bed') {
+    $newRoomType = $newSubUnit['roomType'] ?? null;
+    $newBedType = $newSubUnit['bedType'] ?? null;
+}
+
+$unitTypeForRental = $newRoomType
+    ?? $newBedType
+    ?? $unitDoc['unitType'];
+
+$updateData = [
+    'unit' => $unitDoc['_id'],
+    'unitType' => $unitTypeForRental,
+    'selectedSubUnits' => [
+        'type' => $newType,
+        'roomType' => $newRoomType,
+        'bedType' => $newBedType,
+        'price' => $matchedPrice ?: $newSubUnit['price'],
+        'isAvailable' => true
+    ],
+    'rentalPrice' => (float) $totalRentalPrice,
+    'unitYear' => (int) ($unitDoc['unitYear'] ?? date('Y'))
+];
 
             // Update parking with correct fee
             if (!empty($parkingData)) {
